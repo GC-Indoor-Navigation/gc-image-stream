@@ -29,6 +29,8 @@ def test_monitoring_cameras_returns_stream_state(client, session_factory):
     items = response.json()["items"]
     assert [item["device_id"] for item in items] == ["camera1", "camera2"]
     assert items[0]["frame_count"] == 1
+    assert items[0]["connected"] is True
+    assert items[0]["status"] == "healthy"
     assert items[0]["latest_timestamp"] == 1000
     assert items[0]["latest_sequence"] == 1
     assert items[0]["latest_image_bytes"] == len(b"frame-1")
@@ -129,6 +131,16 @@ def test_monitoring_relay_returns_relay_status(client):
     assert response.status_code == 200
     assert response.json()["enabled"] is True
     assert response.json()["target"] == "127.0.0.1:50051"
+
+
+def test_monitoring_viewer_returns_html(client):
+    response = client.get("/monitoring/viewer")
+
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "GC Monitoring" in response.text
+    assert "/monitoring/cameras" in response.text
+    assert "/monitoring/relay" in response.text
 
 
 def test_debug_viewer_returns_html(client):

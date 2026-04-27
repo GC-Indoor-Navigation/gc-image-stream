@@ -5,6 +5,9 @@ from app.services.stream_relay_service import stream_relay_service
 from app.services.stream_state import CameraStreamState, StreamState, current_time_ms, stream_state
 
 
+STALE_THRESHOLD_MS = 3_000
+
+
 def serialize_camera_state(
     camera: CameraStreamState,
     now_ms: int | None = None,
@@ -16,9 +19,15 @@ def serialize_camera_state(
         if latest is not None
         else None
     )
+    connected = latest is not None and last_received_age_ms is not None
+    is_stale = connected and last_received_age_ms > STALE_THRESHOLD_MS
+    status = "healthy" if connected and not is_stale else "stale" if is_stale else "disconnected"
 
     return {
         "device_id": camera.device_id,
+        "connected": connected,
+        "is_stale": is_stale,
+        "status": status,
         "frame_count": camera.frame_count,
         "latest_frame_id": latest.frame_id if latest is not None else None,
         "latest_timestamp": latest.timestamp if latest is not None else None,

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import HTMLResponse
 
 from app.services.monitoring_service import (
     get_camera_state,
@@ -7,6 +8,334 @@ from app.services.monitoring_service import (
 )
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
+
+
+MONITORING_VIEWER_HTML = """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GC Monitoring</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fa;
+      --surface: #ffffff;
+      --line: #d8dee8;
+      --text: #121926;
+      --muted: #667085;
+      --good: #0f766e;
+      --warn: #b54708;
+      --bad: #b42318;
+      --accent: #155eef;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header {
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+    }
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 650;
+      letter-spacing: 0;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    button {
+      height: 34px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      border-radius: 6px;
+      padding: 0 12px;
+      cursor: pointer;
+    }
+    main {
+      padding: 12px;
+      display: grid;
+      gap: 12px;
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .card, .panel {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .card {
+      min-height: 86px;
+      padding: 12px;
+    }
+    .card span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .card strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 24px;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+    .panel-head {
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--line);
+      font-weight: 650;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+    th, td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+    }
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      min-width: 88px;
+      justify-content: center;
+      height: 24px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .healthy { color: var(--good); border-color: #99f6e4; background: #f0fdfa; }
+    .stale { color: var(--warn); border-color: #fed7aa; background: #fff7ed; }
+    .disconnected { color: var(--bad); border-color: #fecaca; background: #fef2f2; }
+    .relay-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      padding: 12px;
+    }
+    .relay-item {
+      min-height: 78px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+    .relay-item span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .relay-item strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 18px;
+      overflow-wrap: anywhere;
+    }
+    .links {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    a:hover { text-decoration: underline; }
+    @media (max-width: 1080px) {
+      .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .relay-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 720px) {
+      .summary-grid,
+      .relay-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      table, thead, tbody, th, td, tr { display: block; }
+      thead { display: none; }
+      td { padding-top: 4px; padding-bottom: 8px; }
+      tr { border-bottom: 1px solid var(--line); padding: 8px 0; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>GC Monitoring</h1>
+    <div class="links">
+      <a href="/debug/viewer">Debug Viewer</a>
+      <button id="refreshButton" type="button">Refresh</button>
+    </div>
+  </header>
+  <main>
+    <section class="summary-grid" id="summaryGrid"></section>
+    <section class="panel">
+      <div class="panel-head">
+        <span>Relay</span>
+        <span id="lastUpdated" class="meta"></span>
+      </div>
+      <div class="relay-grid" id="relayGrid"></div>
+    </section>
+    <section class="panel">
+      <div class="panel-head">
+        <span>Cameras</span>
+        <span class="meta">Operational view</span>
+      </div>
+      <div style="overflow:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Camera</th>
+              <th>Status</th>
+              <th>FPS</th>
+              <th>Frames</th>
+              <th>Last Timestamp</th>
+              <th>Age</th>
+              <th>Sequence</th>
+              <th>Gaps</th>
+            </tr>
+          </thead>
+          <tbody id="cameraTable"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script>
+    const summaryGrid = document.getElementById("summaryGrid");
+    const relayGrid = document.getElementById("relayGrid");
+    const cameraTable = document.getElementById("cameraTable");
+    const lastUpdated = document.getElementById("lastUpdated");
+    const refreshButton = document.getElementById("refreshButton");
+
+    function escapeHtml(value) {
+      return String(value ?? "-")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function formatAge(ms) {
+      if (ms === null || ms === undefined) return "-";
+      if (ms < 1000) return `${ms}ms`;
+      return `${(ms / 1000).toFixed(1)}s`;
+    }
+
+    function statusClass(status) {
+      return status === "healthy" ? "healthy" : status === "stale" ? "stale" : "disconnected";
+    }
+
+    function summaryCard(label, value, tone = "") {
+      return `<div class="card"><span>${escapeHtml(label)}</span><strong class="${tone}">${escapeHtml(value)}</strong></div>`;
+    }
+
+    function relayCard(label, value, tone = "") {
+      return `<div class="relay-item"><span>${escapeHtml(label)}</span><strong class="${tone}">${escapeHtml(value)}</strong></div>`;
+    }
+
+    function renderSummary(cameras, relay) {
+      const healthy = cameras.filter((camera) => camera.status === "healthy").length;
+      const stale = cameras.filter((camera) => camera.status === "stale").length;
+      const disconnected = cameras.filter((camera) => camera.status === "disconnected").length;
+      const totalFps = cameras.reduce((sum, camera) => sum + Number(camera.estimated_fps || 0), 0);
+      summaryGrid.innerHTML = [
+        summaryCard("Cameras", cameras.length),
+        summaryCard("Healthy", healthy),
+        summaryCard("Stale", stale, stale > 0 ? "stale" : "healthy"),
+        summaryCard("Disconnected", disconnected, disconnected > 0 ? "disconnected" : "healthy"),
+        summaryCard("Total FPS", totalFps.toFixed(2)),
+        summaryCard("Relay Queue", relay.queue_size),
+      ].join("");
+    }
+
+    function renderRelay(relay) {
+      relayGrid.innerHTML = [
+        relayCard("Enabled", relay.enabled ? "true" : "false", relay.enabled ? "healthy" : ""),
+        relayCard("Running", relay.running ? "true" : "false", relay.running ? "healthy" : "stale"),
+        relayCard("Target", relay.target || "-"),
+        relayCard("Queue", relay.queue_size, relay.queue_size > 0 ? "stale" : "healthy"),
+        relayCard("Sent", relay.sent_count),
+        relayCard("Ack", relay.ack_received_count),
+        relayCard("Errors", relay.error_count, relay.error_count > 0 ? "disconnected" : "healthy"),
+        relayCard("Last Error", relay.last_error || "-", relay.last_error ? "disconnected" : ""),
+      ].join("");
+    }
+
+    function renderCameras(cameras) {
+      if (cameras.length === 0) {
+        cameraTable.innerHTML = '<tr><td colspan="8" class="meta">No camera state</td></tr>';
+        return;
+      }
+      cameraTable.innerHTML = cameras.map((camera) => `
+        <tr>
+          <td><a href="/debug/viewer">${escapeHtml(camera.device_id)}</a></td>
+          <td><span class="status ${statusClass(camera.status)}">${escapeHtml(camera.status)}</span></td>
+          <td>${escapeHtml(Number(camera.estimated_fps || 0).toFixed(2))}</td>
+          <td>${escapeHtml(camera.frame_count)}</td>
+          <td>${escapeHtml(camera.latest_timestamp)}</td>
+          <td>${escapeHtml(formatAge(camera.last_received_age_ms))}</td>
+          <td>${escapeHtml(camera.latest_sequence)}</td>
+          <td>${escapeHtml(camera.sequence_gap_count)}</td>
+        </tr>
+      `).join("");
+    }
+
+    async function load() {
+      const [cameraResponse, relayResponse] = await Promise.all([
+        fetch("/monitoring/cameras"),
+        fetch("/monitoring/relay"),
+      ]);
+      const cameraPayload = await cameraResponse.json();
+      const relayPayload = await relayResponse.json();
+      const cameras = cameraPayload.items || [];
+
+      renderSummary(cameras, relayPayload);
+      renderRelay(relayPayload);
+      renderCameras(cameras);
+      lastUpdated.textContent = new Date().toLocaleTimeString();
+    }
+
+    refreshButton.addEventListener("click", load);
+    load();
+    setInterval(load, 2000);
+  </script>
+</body>
+</html>"""
+
+
+@router.get(
+    "/viewer",
+    response_class=HTMLResponse,
+    summary="Monitoring Viewer",
+    description="Operational monitoring page for camera and relay status.",
+)
+def get_monitoring_viewer():
+    return HTMLResponse(MONITORING_VIEWER_HTML)
 
 
 @router.get(

@@ -167,6 +167,7 @@ Set `EXPERIMENT_ID` in each camera env file to make runs easy to compare. Set `E
 
 ### Monitoring
 
+- `GET /monitoring/viewer`
 - `GET /monitoring/cameras`
 - `GET /monitoring/cameras/{device_id}`
 - `GET /monitoring/relay`
