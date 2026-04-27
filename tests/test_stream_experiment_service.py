@@ -1,4 +1,5 @@
 import json
+import re
 from threading import Event
 
 from app.services.camera_session_service import CameraSessionConfig, run_mjpeg_camera_session
@@ -86,3 +87,20 @@ def test_camera_session_records_capture_events(tmp_path, session_factory, storag
     assert summary["registered_count"] == 1
     assert '"event":"captured"' in events
     assert '"device_id":"camera1"' in events
+
+
+def test_stream_experiment_recorder_generates_timestamped_run_id(tmp_path):
+    recorder = configure_stream_experiment_recorder(
+        experiment_log_dir=str(tmp_path),
+        experiment_id="",
+        storage_dir="storage",
+        relay_target="127.0.0.1:50051",
+        camera_ids=["camera1"],
+    )
+    assert recorder is not None
+
+    run_id = recorder.run_id
+    clear_stream_experiment_recorder()
+
+    assert re.fullmatch(r"stream-server-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}", run_id)
+    assert (tmp_path / run_id / "summary.json").is_file()

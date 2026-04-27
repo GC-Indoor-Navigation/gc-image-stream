@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from datetime import datetime
 from dataclasses import dataclass, field
 from threading import Lock
 from typing import Any
@@ -29,7 +30,10 @@ class ExperimentRecorder:
         self.started_at_ms = int(time.time() * 1000)
         self.run_id = sanitize_experiment_id(
             context.experiment_id
-            or f"{context.run_name}-{context.collector_type}-{self.started_at_ms}"
+            or build_default_experiment_id(
+                run_name=context.run_name,
+                collector_type=context.collector_type,
+            )
         )
         self.run_dir = os.path.join(context.experiment_log_dir, self.run_id)
         ensure_dir(self.run_dir)
@@ -292,6 +296,14 @@ def sanitize_experiment_id(value: str) -> str:
 
     result = "".join(sanitized).strip("-")
     return result or "experiment"
+
+
+def build_default_experiment_id(run_name: str, collector_type: str) -> str:
+    timestamp_label = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    prefix_parts = [run_name]
+    if collector_type != "stream_server":
+        prefix_parts.append(collector_type)
+    return "-".join(prefix_parts + [timestamp_label])
 
 
 def build_legacy_experiment_context(

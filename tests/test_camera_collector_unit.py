@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -113,6 +114,23 @@ def test_experiment_recorder_writes_events_and_summary(monkeypatch, tmp_path):
     assert summary["registered_count"] == 1
     assert summary["relay_enqueued_count"] == 1
     assert summary["image_bytes_total"] == 100
+
+
+def test_experiment_recorder_generates_timestamped_run_id_when_missing(monkeypatch, tmp_path):
+    monkeypatch.setenv("CAMERA_NAME", "camera1")
+    monkeypatch.setenv("CAMERA_SNAPSHOT_URL", "http://camera.local/shot.jpg")
+    monkeypatch.setenv("EXPERIMENT_LOG_DIR", str(tmp_path))
+    monkeypatch.delenv("EXPERIMENT_ID", raising=False)
+
+    config = snapshot_collector.build_config()
+    recorder = core.start_experiment_recorder(config, "snapshot")
+
+    assert recorder is not None
+    run_id = recorder.run_id
+    core.close_experiment_recorder(recorder)
+
+    assert re.fullmatch(r"camera1-snapshot-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}", run_id)
+    assert (tmp_path / run_id / "summary.json").is_file()
 
 
 def test_enqueue_relay_is_noop_without_queue():

@@ -135,7 +135,8 @@ Primary Stream Server experiment logging uses the root `.env` values
 `EXPERIMENT_ENABLED`, `EXPERIMENT_ID`, and `EXPERIMENT_LOG_DIR`. When
 `EXPERIMENT_ENABLED=true` and `EXPERIMENT_LOG_DIR` is set, camera session
 capture, ingest registration, and relay events are written under
-`experiment_logs/<experiment-id>/`.
+`experiment_logs/<experiment-id>/`. Leave `EXPERIMENT_ID=` empty when you want
+the server to create a new timestamped folder automatically for each run.
 
 ### 3. Run the server
 
@@ -156,7 +157,10 @@ Collector runs save experiment records by default under `experiment_logs/<experi
 - `events.jsonl`: capture, register, relay, and schedule-lag events
 - `summary.json`: aggregate counts, average fps, offsets, byte totals, and error counts
 
-Set `EXPERIMENT_ID` in each camera env file to make runs easy to compare. Set `EXPERIMENT_LOG_DIR=` to disable file logging for a run.
+Set `EXPERIMENT_ID` in each camera env file to pin a stable folder name when
+you want to compare repeated runs. Leave `EXPERIMENT_ID=` empty to create a new
+timestamped folder automatically each time. Set `EXPERIMENT_LOG_DIR=` to
+disable file logging for a run.
 
 ## API Summary
 
