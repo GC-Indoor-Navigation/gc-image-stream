@@ -221,6 +221,7 @@ DEBUG_VIEWER_HTML = """<!doctype html>
   <script>
     let selectedDeviceId = null;
     let cameras = [];
+    let selectedFrameKey = null;
 
     const cameraList = document.getElementById("cameraList");
     const cameraCount = document.getElementById("cameraCount");
@@ -282,17 +283,27 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       });
     }
 
-    function renderSelected() {
+    function getFrameKey(camera) {
+      if (!camera) return null;
+      return `${camera.latest_sequence ?? "-"}:${camera.latest_timestamp ?? "-"}`;
+    }
+
+    function renderSelected(forceImageReload = false) {
       const camera = cameras.find((item) => item.device_id === selectedDeviceId);
       if (!camera) {
         selectedTitle.textContent = "Latest Frame";
         frameWrap.innerHTML = '<div class="empty">No frame selected</div>';
         details.innerHTML = "";
+        selectedFrameKey = null;
         return;
       }
 
       selectedTitle.textContent = camera.device_id;
-      frameWrap.innerHTML = `<img alt="${escapeHtml(camera.device_id)}" src="/debug/cameras/${encodeURIComponent(camera.device_id)}/latest-frame?t=${Date.now()}">`;
+      const nextFrameKey = getFrameKey(camera);
+      if (forceImageReload || nextFrameKey !== selectedFrameKey) {
+        frameWrap.innerHTML = `<img alt="${escapeHtml(camera.device_id)}" src="/debug/cameras/${encodeURIComponent(camera.device_id)}/latest-frame?t=${Date.now()}">`;
+        selectedFrameKey = nextFrameKey;
+      }
       details.innerHTML = [
         metric("Timestamp", camera.latest_timestamp),
         metric("Sequence", camera.latest_sequence),
@@ -336,14 +347,10 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       }).join("");
     }
 
-    async function load() {
-      const [cameraResponse, relayResponse, deltaResponse] = await Promise.all([
-        fetch("/monitoring/cameras"),
-        fetch("/monitoring/relay"),
-        fetch("/debug/timestamp-delta"),
-      ]);
-      const cameraPayload = await cameraResponse.json();
-      cameras = cameraPayload.items || [];
+    function applyPayload(payload) {
+      cameras = payload.cameras || [];
+      const relay = payload.relay || {};
+      const delta = payload.timestamp_delta || { items: [] };
       if (!selectedDeviceId && cameras.length > 0) {
         selectedDeviceId = cameras[0].device_id;
       }
@@ -352,14 +359,45 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       }
       renderCameras();
       renderSelected();
+      renderRelay(relay);
+      renderDelta(delta);
+      lastUpdated.textContent = new Date().toLocaleTimeString();
+    }
+
+    async function loadFallback(forceImageReload = false) {
+      const [cameraResponse, relayResponse, deltaResponse] = await Promise.all([
+        fetch("/monitoring/cameras"),
+        fetch("/monitoring/relay"),
+        fetch("/debug/timestamp-delta"),
+      ]);
+      cameras = (await cameraResponse.json()).items || [];
+      if (!selectedDeviceId && cameras.length > 0) {
+        selectedDeviceId = cameras[0].device_id;
+      }
+      if (selectedDeviceId && !cameras.some((camera) => camera.device_id === selectedDeviceId)) {
+        selectedDeviceId = cameras.length > 0 ? cameras[0].device_id : null;
+      }
+      renderCameras();
+      renderSelected(forceImageReload);
       renderRelay(await relayResponse.json());
       renderDelta(await deltaResponse.json());
       lastUpdated.textContent = new Date().toLocaleTimeString();
     }
 
-    refreshButton.addEventListener("click", load);
-    load();
-    setInterval(load, 2000);
+    function connectEventStream() {
+      const source = new EventSource("/monitoring/events");
+      source.onmessage = (event) => {
+        applyPayload(JSON.parse(event.data));
+      };
+      source.onerror = () => {
+        source.close();
+        window.setTimeout(connectEventStream, 2000);
+      };
+    }
+
+    refreshButton.addEventListener("click", () => loadFallback(true));
+    loadFallback(true);
+    connectEventStream();
   </script>
 </body>
 </html>"""

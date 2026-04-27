@@ -133,14 +133,35 @@ def test_monitoring_relay_returns_relay_status(client):
     assert response.json()["target"] == "127.0.0.1:50051"
 
 
+def test_monitoring_events_returns_sse_snapshot(client, session_factory):
+    db = session_factory()
+    try:
+        ingest_frame(
+            db,
+            device_id="camera1",
+            timestamp_ms=1000,
+            sequence=1,
+            image_bytes=b"frame-1",
+        )
+    finally:
+        db.close()
+
+    response = client.get("/monitoring/events?once=true")
+
+    assert response.status_code == 200
+    assert "text/event-stream" in response.headers["content-type"]
+    assert '"device_id":"camera1"' in response.text
+    assert '"relay"' in response.text
+    assert '"timestamp_delta"' in response.text
+
+
 def test_monitoring_viewer_returns_html(client):
     response = client.get("/monitoring/viewer")
 
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     assert "GC Monitoring" in response.text
-    assert "/monitoring/cameras" in response.text
-    assert "/monitoring/relay" in response.text
+    assert 'new EventSource("/monitoring/events")' in response.text
 
 
 def test_debug_viewer_returns_html(client):
@@ -149,5 +170,5 @@ def test_debug_viewer_returns_html(client):
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     assert "GC Debug Viewer" in response.text
-    assert "/monitoring/cameras" in response.text
+    assert 'new EventSource("/monitoring/events")' in response.text
     assert "/debug/timestamp-delta" in response.text

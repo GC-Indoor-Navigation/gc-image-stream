@@ -1,6 +1,10 @@
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse
+import asyncio
+import json
 
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
+
+from app.services.debug_service import get_latest_timestamp_delta
 from app.services.monitoring_service import (
     get_camera_state,
     get_relay_status,
@@ -305,24 +309,40 @@ MONITORING_VIEWER_HTML = """<!doctype html>
       `).join("");
     }
 
-    async function load() {
-      const [cameraResponse, relayResponse] = await Promise.all([
-        fetch("/monitoring/cameras"),
-        fetch("/monitoring/relay"),
-      ]);
-      const cameraPayload = await cameraResponse.json();
-      const relayPayload = await relayResponse.json();
-      const cameras = cameraPayload.items || [];
-
-      renderSummary(cameras, relayPayload);
-      renderRelay(relayPayload);
+    function applyPayload(payload) {
+      const cameras = payload.cameras || [];
+      const relay = payload.relay || {};
+      renderSummary(cameras, relay);
+      renderRelay(relay);
       renderCameras(cameras);
       lastUpdated.textContent = new Date().toLocaleTimeString();
     }
 
-    refreshButton.addEventListener("click", load);
-    load();
-    setInterval(load, 2000);
+    async function loadFallback() {
+      const [cameraResponse, relayResponse] = await Promise.all([
+        fetch("/monitoring/cameras"),
+        fetch("/monitoring/relay"),
+      ]);
+      applyPayload({
+        cameras: (await cameraResponse.json()).items || [],
+        relay: await relayResponse.json(),
+      });
+    }
+
+    function connectEventStream() {
+      const source = new EventSource("/monitoring/events");
+      source.onmessage = (event) => {
+        applyPayload(JSON.parse(event.data));
+      };
+      source.onerror = () => {
+        source.close();
+        window.setTimeout(connectEventStream, 2000);
+      };
+    }
+
+    refreshButton.addEventListener("click", loadFallback);
+    loadFallback();
+    connectEventStream();
   </script>
 </body>
 </html>"""
@@ -336,6 +356,38 @@ MONITORING_VIEWER_HTML = """<!doctype html>
 )
 def get_monitoring_viewer():
     return HTMLResponse(MONITORING_VIEWER_HTML)
+
+
+def build_monitoring_snapshot():
+    return {
+        "cameras": list_camera_states(),
+        "relay": get_relay_status(),
+        "timestamp_delta": get_latest_timestamp_delta(),
+    }
+
+
+@router.get(
+    "/events",
+    summary="Monitoring event stream",
+    description="SSE stream for camera, relay, and timestamp-delta updates.",
+)
+async def get_monitoring_events(request: Request, once: bool = False):
+    async def event_generator():
+        while True:
+            payload = build_monitoring_snapshot()
+            yield f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
+            if once or await request.is_disconnected():
+                break
+            await asyncio.sleep(1.0)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.get(
