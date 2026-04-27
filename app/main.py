@@ -9,11 +9,14 @@ from app.config.cameras import (
 from app.db import Base, engine, SessionLocal, ensure_database_schema
 from app.config.server import (
     AUTO_SYNC_ENABLED,
+    EXPERIMENT_ID,
+    EXPERIMENT_LOG_DIR,
     FRAME_COMPRESS_AFTER_SEC,
     FRAME_COMPRESS_BATCH_SIZE,
     FRAME_COMPRESS_JPEG_QUALITY,
     FRAME_MAINTENANCE_INTERVAL_SEC,
     PROCESSING_SERVER_URL,
+    STORAGE_DIR,
     STREAM_RELAY_ENABLED,
     STREAM_RELAY_TARGET,
     STREAM_RELAY_TIMEOUT_SEC,
@@ -26,6 +29,10 @@ from app.routes.sync import router as sync_router
 from app.services.camera_session_manager import camera_session_manager
 from app.services.frame_maintenance_service import compress_old_dispatched_frames
 from app.services.stream_relay_service import stream_relay_service
+from app.services.stream_experiment_service import (
+    clear_stream_experiment_recorder,
+    configure_stream_experiment_recorder,
+)
 from app.services.sync_service import (
     build_sync_groups,
     dispatch_sync_group,
@@ -185,6 +192,18 @@ async def frame_maintenance_loop():
 # 서버 시작 시 필요한 백그라운드 루프를 띄운다.
 @app.on_event("startup")
 async def startup_event():
+    camera_configs = []
+    if CAMERA_SESSIONS_ENABLED:
+        camera_configs = build_camera_session_configs_from_env()
+
+    configure_stream_experiment_recorder(
+        experiment_log_dir=EXPERIMENT_LOG_DIR,
+        experiment_id=EXPERIMENT_ID,
+        storage_dir=STORAGE_DIR,
+        relay_target=STREAM_RELAY_TARGET if STREAM_RELAY_ENABLED else "",
+        camera_ids=[config.device_id for config in camera_configs],
+    )
+
     if STREAM_RELAY_ENABLED:
         stream_relay_service.configure(
             target=STREAM_RELAY_TARGET,
@@ -207,7 +226,6 @@ async def startup_event():
         logger.info(format_log_event("stream_relay_disabled"))
 
     if CAMERA_SESSIONS_ENABLED:
-        camera_configs = build_camera_session_configs_from_env()
         camera_session_manager.start_all(camera_configs)
         logger.info(
             format_log_event(
@@ -256,6 +274,7 @@ async def startup_event():
 async def shutdown_event():
     camera_session_manager.stop_all()
     stream_relay_service.stop()
+    clear_stream_experiment_recorder()
     logger.info(format_log_event("camera_sessions_stopped"))
 
 

@@ -1,3 +1,5 @@
+from time import sleep
+
 from processing.grpc_relay import RelayAck, RelayFrame
 
 from app.services.stream_relay_service import StreamRelayService
@@ -88,4 +90,70 @@ def test_stream_relay_service_worker_sends_queued_frames():
     assert status["sent_count"] == 2
     assert status["ack_received_count"] == 2
     assert status["error_count"] == 0
+    assert status["last_ack_success"] is True
+
+
+def test_stream_relay_service_worker_reconnects_after_error():
+    captured_frames = []
+    call_count = 0
+
+    def stub_factory(target):
+        assert target == "127.0.0.1:50051"
+
+        def stub(frame_iterator, timeout=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("transient relay failure")
+            assert timeout is None
+            captured_frames.extend(frame_iterator)
+            return RelayAck(
+                success=True,
+                received_count=len(captured_frames),
+                message="ok",
+            )
+
+        return stub
+
+    service = StreamRelayService(
+        stub_factory=stub_factory,
+        reconnect_delay_sec=0.01,
+    )
+    service.configure(
+        target="127.0.0.1:50051",
+        enabled=True,
+    )
+
+    service.start()
+    service.enqueue(
+        RelayFrame(
+            device_id="camera1",
+            timestamp_ms=1000,
+            sequence=1,
+            content_type="image/jpeg",
+            image_bytes=b"frame-1",
+        )
+    )
+    service.enqueue(
+        RelayFrame(
+            device_id="camera1",
+            timestamp_ms=1010,
+            sequence=2,
+            content_type="image/jpeg",
+            image_bytes=b"frame-2",
+        )
+    )
+    for _ in range(100):
+        if call_count >= 2:
+            break
+        sleep(0.01)
+    service.stop(timeout_sec=1.0)
+
+    status = service.status()
+    assert call_count >= 2
+    assert [frame.sequence for frame in captured_frames] == [1, 2]
+    assert status["sent_count"] == 2
+    assert status["ack_received_count"] == 2
+    assert status["error_count"] == 1
+    assert status["last_error"] is None
     assert status["last_ack_success"] is True

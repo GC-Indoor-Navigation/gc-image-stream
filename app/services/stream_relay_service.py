@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
 
+from app.services.stream_experiment_service import get_stream_experiment_recorder
 from processing.grpc_relay import RelayAck, RelayFrame, build_frame_relay_stub
 
 
@@ -17,7 +18,11 @@ class StreamRelayRuntime:
 
 
 class StreamRelayService:
-    def __init__(self, stub_factory: RelayStubFactory | None = None):
+    def __init__(
+        self,
+        stub_factory: RelayStubFactory | None = None,
+        reconnect_delay_sec: float = 1.0,
+    ):
         self.queue: Queue[RelayFrame] = Queue()
         self.runtime: StreamRelayRuntime | None = None
         self.target: str | None = None
@@ -32,6 +37,7 @@ class StreamRelayService:
         self.last_ack_received_count: int | None = None
         self._lock = Lock()
         self._stub_factory = stub_factory
+        self._reconnect_delay_sec = reconnect_delay_sec
 
     def configure(
         self,
@@ -49,6 +55,15 @@ class StreamRelayService:
         self.queue.put(frame)
         with self._lock:
             self.enqueued_count += 1
+        experiment_recorder = get_stream_experiment_recorder()
+        if experiment_recorder is not None:
+            experiment_recorder.record_relay_enqueued(
+                device_id=frame.device_id,
+                timestamp_ms=frame.timestamp_ms,
+                sequence=frame.sequence,
+                image_bytes_size=len(frame.image_bytes),
+                queue_size=self.queue.qsize(),
+            )
         return True
 
     def start(self):
@@ -131,41 +146,55 @@ class StreamRelayService:
                 self.queue.task_done()
 
     def _run(self, stop_event: Event):
-        channel = None
-        try:
-            if self._stub_factory is not None:
-                stub = self._stub_factory(self.target or "")
-            else:
-                try:
-                    import grpc
-                except ImportError as exc:
-                    raise RuntimeError("grpcio is required for stream relay") from exc
+        while not stop_event.is_set() or not self.queue.empty():
+            channel = None
+            try:
+                if self._stub_factory is not None:
+                    stub = self._stub_factory(self.target or "")
+                else:
+                    try:
+                        import grpc
+                    except ImportError as exc:
+                        raise RuntimeError("grpcio is required for stream relay") from exc
 
-                channel = grpc.insecure_channel(self.target)
-                stub = build_frame_relay_stub(channel)
+                    channel = grpc.insecure_channel(self.target)
+                    stub = build_frame_relay_stub(channel)
 
-            ack = stub(
-                self._iter_frames(stop_event),
-                timeout=self.timeout_sec,
-            )
-            self.last_ack_success = ack.success
-            self.last_ack_received_count = ack.received_count
-            with self._lock:
-                self.ack_received_count += ack.received_count
-            if not ack.success:
-                self.last_error = ack.message
+                ack = stub(
+                    self._iter_frames(stop_event),
+                    timeout=self.timeout_sec,
+                )
+                self.last_ack_success = ack.success
+                self.last_ack_received_count = ack.received_count
+                with self._lock:
+                    self.ack_received_count += ack.received_count
+                experiment_recorder = get_stream_experiment_recorder()
+                if not ack.success:
+                    self.last_error = ack.message
+                    with self._lock:
+                        self.error_count += 1
+                else:
+                    self.last_error = None
+                if experiment_recorder is not None:
+                    experiment_recorder.record_relay_closed(
+                        success=ack.success,
+                        received_count=ack.received_count,
+                        message=ack.message,
+                    )
+                return
+            except Exception as exc:
+                self.last_error = str(exc)
+                self.last_ack_success = False
                 with self._lock:
                     self.error_count += 1
-            else:
-                self.last_error = None
-        except Exception as exc:
-            self.last_error = str(exc)
-            self.last_ack_success = False
-            with self._lock:
-                self.error_count += 1
-        finally:
-            if channel is not None:
-                channel.close()
+                experiment_recorder = get_stream_experiment_recorder()
+                if experiment_recorder is not None:
+                    experiment_recorder.record_relay_error(str(exc))
+                if stop_event.wait(timeout=self._reconnect_delay_sec):
+                    return
+            finally:
+                if channel is not None:
+                    channel.close()
 
 
 stream_relay_service = StreamRelayService()

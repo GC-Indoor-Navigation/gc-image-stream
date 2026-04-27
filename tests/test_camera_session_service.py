@@ -9,6 +9,7 @@ from app.services.stream_state import stream_state
 
 
 def test_run_mjpeg_camera_session_ingests_frames(session_factory, storage_dir):
+    stream_state.clear()
     config = CameraSessionConfig(
         device_id="camera1",
         source_url="http://camera.local/video",
@@ -43,3 +44,4 @@ def test_run_mjpeg_camera_session_ingests_frames(session_factory, storage_dir):
     assert camera.latest_frame is not None
     assert camera.latest_frame.sequence == 2
     assert camera.latest_frame.timestamp == 1_002
+    stream_state.clear()

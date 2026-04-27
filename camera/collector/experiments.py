@@ -1,30 +1,37 @@
 import json
 import os
 import time
+from dataclasses import dataclass, field
 from threading import Lock
+from typing import Any
 
 from camera.collector.config import CollectorConfig
 from camera.collector.storage import ensure_dir
 
 
+@dataclass
+class ExperimentContext:
+    collector_type: str
+    run_name: str
+    experiment_log_dir: str | None
+    experiment_id: str | None = None
+    summary_fields: dict[str, Any] = field(default_factory=dict)
+
+
 class ExperimentRecorder:
-    def __init__(
-        self,
-        config: CollectorConfig,
-        collector_type: str,
-    ):
-        if not config.experiment_log_dir:
+    def __init__(self, context: ExperimentContext):
+        if not context.experiment_log_dir:
             raise ValueError("experiment_log_dir is required")
 
-        self.config = config
-        self.collector_type = collector_type
+        self.context = context
+        self.collector_type = context.collector_type
         self.started_at_monotonic = time.monotonic()
         self.started_at_ms = int(time.time() * 1000)
         self.run_id = sanitize_experiment_id(
-            config.experiment_id
-            or f"{config.camera_name}-{collector_type}-{self.started_at_ms}"
+            context.experiment_id
+            or f"{context.run_name}-{context.collector_type}-{self.started_at_ms}"
         )
-        self.run_dir = os.path.join(config.experiment_log_dir, self.run_id)
+        self.run_dir = os.path.join(context.experiment_log_dir, self.run_id)
         ensure_dir(self.run_dir)
         self.events_path = os.path.join(self.run_dir, "events.jsonl")
         self.summary_path = os.path.join(self.run_dir, "summary.json")
@@ -32,13 +39,9 @@ class ExperimentRecorder:
         self.events_file = open(self.events_path, "a", encoding="utf-8")
         self.summary = {
             "experiment_id": self.run_id,
-            "collector_type": collector_type,
-            "camera_name": config.camera_name,
-            "source_url": config.source_url,
-            "collect_interval_sec": config.collect_interval_sec,
-            "legacy_register_api_url": config.legacy_register_api_url,
-            "legacy_grpc_relay_target": config.legacy_grpc_relay_target,
-            "legacy_storage_dir": config.legacy_storage_dir,
+            "collector_type": context.collector_type,
+            "run_name": context.run_name,
+            **context.summary_fields,
             "started_at_ms": self.started_at_ms,
             "ended_at_ms": None,
             "duration_s": 0.0,
@@ -96,6 +99,7 @@ class ExperimentRecorder:
         scheduled_at: float,
         captured_at: float,
         image_bytes_size: int,
+        device_id: str | None = None,
     ):
         offset_ms = max(0.0, (captured_at - scheduled_at) * 1000)
 
@@ -125,6 +129,7 @@ class ExperimentRecorder:
         self.record_event(
             "captured",
             {
+                "device_id": device_id,
                 "timestamp_ms": timestamp_ms,
                 "sequence": sequence,
                 "capture_label": capture_label,
@@ -145,6 +150,7 @@ class ExperimentRecorder:
         queue_size: int,
         status_code: int | None = None,
         error: str | None = None,
+        device_id: str | None = None,
     ):
         with self.lock:
             if status == "registered":
@@ -157,6 +163,7 @@ class ExperimentRecorder:
         self.record_event(
             status,
             {
+                "device_id": device_id,
                 "timestamp_ms": timestamp_ms,
                 "elapsed_s": round(elapsed, 6),
                 "queue_size": queue_size,
@@ -171,6 +178,7 @@ class ExperimentRecorder:
         sequence: int,
         image_bytes_size: int,
         queue_size: int,
+        device_id: str | None = None,
     ):
         with self.lock:
             self.summary["relay_enqueued_count"] += 1
@@ -178,6 +186,7 @@ class ExperimentRecorder:
         self.record_event(
             "relay_enqueued",
             {
+                "device_id": device_id,
                 "timestamp_ms": timestamp_ms,
                 "sequence": sequence,
                 "image_bytes": image_bytes_size,
@@ -208,6 +217,7 @@ class ExperimentRecorder:
         self,
         skipped: int,
         loop_elapsed: float,
+        device_id: str | None = None,
     ):
         with self.lock:
             self.summary["schedule_lag_count"] += 1
@@ -216,6 +226,7 @@ class ExperimentRecorder:
         self.record_event(
             "schedule_lag",
             {
+                "device_id": device_id,
                 "skipped": skipped,
                 "loop_elapsed_s": round(loop_elapsed, 6),
             },
@@ -283,14 +294,41 @@ def sanitize_experiment_id(value: str) -> str:
     return result or "experiment"
 
 
+def build_legacy_experiment_context(
+    config: CollectorConfig,
+    collector_type: str,
+) -> ExperimentContext:
+    return ExperimentContext(
+        collector_type=collector_type,
+        run_name=config.camera_name,
+        experiment_log_dir=config.experiment_log_dir,
+        experiment_id=config.experiment_id,
+        summary_fields={
+            "camera_name": config.camera_name,
+            "source_url": config.source_url,
+            "collect_interval_sec": config.collect_interval_sec,
+            "legacy_register_api_url": config.legacy_register_api_url,
+            "legacy_grpc_relay_target": config.legacy_grpc_relay_target,
+            "legacy_storage_dir": config.legacy_storage_dir,
+        },
+    )
+
+
 def start_experiment_recorder(
     config: CollectorConfig,
     collector_type: str,
 ) -> ExperimentRecorder | None:
-    if not config.experiment_log_dir:
+    context = build_legacy_experiment_context(config, collector_type)
+    return start_generic_experiment_recorder(context)
+
+
+def start_generic_experiment_recorder(
+    context: ExperimentContext,
+) -> ExperimentRecorder | None:
+    if not context.experiment_log_dir:
         return None
 
-    recorder = ExperimentRecorder(config, collector_type)
+    recorder = ExperimentRecorder(context)
     print(f"[EXPERIMENT] events={recorder.events_path}")
     print(f"[EXPERIMENT] summary={recorder.summary_path}")
     return recorder

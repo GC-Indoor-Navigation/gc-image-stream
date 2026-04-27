@@ -84,7 +84,10 @@ PROCESSING_SERVER_URL=http://127.0.0.1:9000/process
 AUTO_SYNC_ENABLED=false
 STREAM_RELAY_ENABLED=false
 STREAM_RELAY_TARGET=127.0.0.1:50051
-STREAM_RELAY_TIMEOUT_SEC=60
+STREAM_RELAY_TIMEOUT_SEC=
+EXPERIMENT_ENABLED=false
+EXPERIMENT_ID=
+EXPERIMENT_LOG_DIR=
 CAMERA_SESSIONS_ENABLED=false
 ```
 
@@ -110,6 +113,7 @@ EXPERIMENT_LOG_DIR=experiment_logs
 Optional legacy direct relay for standalone collector experiments:
 
 ```env
+EXPERIMENT_ENABLED=true
 GRPC_RELAY_TARGET=127.0.0.1:50051
 GRPC_RELAY_TIMEOUT_SEC=60
 ```
@@ -126,6 +130,12 @@ CAMERA1_COLLECT_INTERVAL_SEC=0.1
 CAMERA2_STREAM_URL=http://127.0.0.1:8081/video
 CAMERA2_COLLECT_INTERVAL_SEC=0.1
 ```
+
+Primary Stream Server experiment logging uses the root `.env` values
+`EXPERIMENT_ENABLED`, `EXPERIMENT_ID`, and `EXPERIMENT_LOG_DIR`. When
+`EXPERIMENT_ENABLED=true` and `EXPERIMENT_LOG_DIR` is set, camera session
+capture, ingest registration, and relay events are written under
+`experiment_logs/<experiment-id>/`.
 
 ### 3. Run the server
 
@@ -225,7 +235,7 @@ Dispatch status meanings:
 
 Automatic sync grouping and grouped HTTP dispatch are disabled by default because gRPC frame relay is the primary processing path. Set `AUTO_SYNC_ENABLED=true` only when you want to run the legacy grouped dispatch loop.
 
-Server-side gRPC relay is controlled by `STREAM_RELAY_ENABLED`. When enabled, frames accepted by `ingest_frame()` are saved locally, tracked in StreamState, and queued for relay to `STREAM_RELAY_TARGET`.
+Server-side gRPC relay is controlled by `STREAM_RELAY_ENABLED`. When enabled, frames accepted by `ingest_frame()` are saved locally, tracked in StreamState, and queued for relay to `STREAM_RELAY_TARGET`. `STREAM_RELAY_TIMEOUT_SEC` is optional; leave it empty to keep the streaming RPC open without a deadline.
 
 ## Dispatch Retry Policy
 

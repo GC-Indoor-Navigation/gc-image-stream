@@ -49,6 +49,7 @@ def log_schedule_lag(
     loop_finished_at: float,
     runtime_elapsed: float,
     experiment_recorder: ExperimentRecorder | None = None,
+    device_id: str | None = None,
 ) -> float:
     adjusted_next_capture_at = calculate_next_capture_at(
         scheduled_at=scheduled_at,
@@ -78,6 +79,7 @@ def log_schedule_lag(
                 experiment_recorder.record_schedule_lag(
                     skipped=skipped,
                     loop_elapsed=loop_elapsed,
+                    device_id=device_id,
                 )
 
     return adjusted_next_capture_at

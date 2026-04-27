@@ -1,7 +1,9 @@
+import time
 from pathlib import Path
 
 from sqlalchemy.orm import Session
 
+from app.services.stream_experiment_service import get_stream_experiment_recorder
 from app.services.frame_service import create_frame
 from app.services.stream_relay_service import StreamRelayService, stream_relay_service
 from app.services.stream_state import StreamState, stream_state
@@ -20,6 +22,7 @@ def ingest_frame(
     state: StreamState = stream_state,
     relay_service: StreamRelayService = stream_relay_service,
 ):
+    started_at = time.monotonic()
     target_filename = filename or f"{device_id}_{timestamp_ms}.jpg"
     save_path = build_frame_path(device_id, timestamp_ms, target_filename)
     Path(save_path).write_bytes(image_bytes)
@@ -50,6 +53,15 @@ def ingest_frame(
             file_path=frame.file_path,
         )
     )
+    experiment_recorder = get_stream_experiment_recorder()
+    if experiment_recorder is not None:
+        experiment_recorder.record_registration(
+            status="registered",
+            device_id=frame.device_id,
+            timestamp_ms=frame.timestamp,
+            elapsed=time.monotonic() - started_at,
+            queue_size=0,
+        )
 
     return {
         "frame": frame,
