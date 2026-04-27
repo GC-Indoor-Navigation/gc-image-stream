@@ -13,6 +13,7 @@ def test_build_config_reads_required_values(monkeypatch):
     monkeypatch.setenv("COLLECT_INTERVAL_SEC", "0.1")
     monkeypatch.setenv("STORAGE_DIR", "captures")
     monkeypatch.setenv("REGISTER_API_URL", "http://server.local/frames/register")
+    monkeypatch.delenv("EXPERIMENT_ID", raising=False)
 
     config = snapshot_collector.build_config()
 
@@ -54,6 +55,16 @@ def test_build_config_reads_optional_experiment_env(monkeypatch, tmp_path):
 
     assert config.experiment_log_dir == str(tmp_path)
     assert config.experiment_id == "relay-e2e-camera1"
+
+
+def test_build_config_can_disable_experiment_logging(monkeypatch):
+    monkeypatch.setenv("CAMERA_NAME", "camera1")
+    monkeypatch.setenv("CAMERA_SNAPSHOT_URL", "http://camera.local/shot.jpg")
+    monkeypatch.setenv("EXPERIMENT_ENABLED", "false")
+
+    config = snapshot_collector.build_config()
+
+    assert config.experiment_log_dir is None
 
 
 def test_experiment_recorder_writes_events_and_summary(monkeypatch, tmp_path):

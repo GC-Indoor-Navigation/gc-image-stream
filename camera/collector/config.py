@@ -51,6 +51,20 @@ def load_env_file(env_file: str | None = None):
     print(f"[ENV] loaded: {target}")
 
 
+def get_optional_bool_env(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None or not raw_value.strip():
+        return default
+
+    normalized = raw_value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+
+    raise ValueError(f"Invalid bool value for {name}: {raw_value}")
+
+
 # 공통 환경변수로부터 수집기 설정 객체를 만든다.
 def build_collector_config(
     source_env_name: str,
@@ -81,6 +95,13 @@ def build_collector_config(
         if parsed_relay_timeout > 0:
             relay_timeout_sec = parsed_relay_timeout
 
+    experiment_enabled = get_optional_bool_env("EXPERIMENT_ENABLED", True)
+    experiment_log_dir = (
+        os.getenv("EXPERIMENT_LOG_DIR", DEFAULT_EXPERIMENT_LOG_DIR)
+        if experiment_enabled
+        else None
+    )
+
     return CollectorConfig(
         camera_name=camera_name,
         source_url=source_url,
@@ -95,9 +116,6 @@ def build_collector_config(
         ),
         legacy_grpc_relay_target=os.getenv("GRPC_RELAY_TARGET"),
         legacy_grpc_relay_timeout_sec=relay_timeout_sec,
-        experiment_log_dir=os.getenv(
-            "EXPERIMENT_LOG_DIR",
-            DEFAULT_EXPERIMENT_LOG_DIR,
-        ),
+        experiment_log_dir=experiment_log_dir,
         experiment_id=os.getenv("EXPERIMENT_ID"),
     )
