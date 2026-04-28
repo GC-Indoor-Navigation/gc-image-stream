@@ -3,6 +3,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
+from app.contracts.processing_relay import RelayFrame
 from app.services.frame_service import create_frame
 from app.services.stream.stream_experiment import get_stream_experiment_recorder
 from app.services.stream.processing_relay_client import (
@@ -11,7 +12,6 @@ from app.services.stream.processing_relay_client import (
 )
 from app.services.stream.state import StreamState, stream_state
 from app.utils.file_utils import build_frame_path
-from processing.grpc_relay import RelayFrame
 
 
 def ingest_frame(

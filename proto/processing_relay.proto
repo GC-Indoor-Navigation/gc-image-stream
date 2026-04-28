@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package gc_image_stream.processing.v1;
+
+service FrameRelayService {
+  rpc StreamFrames(stream RelayFrame) returns (RelayAck);
+}
+
+message RelayFrame {
+  string device_id = 1;
+  int64 timestamp_ms = 2;
+  uint64 sequence = 3;
+  string content_type = 4;
+  bytes image_bytes = 5;
+  optional string file_path = 6;
+}
+
+message RelayAck {
+  bool success = 1;
+  uint64 received_count = 2;
+  string message = 3;
+}

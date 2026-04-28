@@ -3,8 +3,8 @@ from dataclasses import dataclass
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
 
+from app.contracts.processing_relay import RelayAck, RelayFrame, build_frame_relay_stub
 from app.services.stream.stream_experiment import get_stream_experiment_recorder
-from processing.grpc_relay import RelayAck, RelayFrame, build_frame_relay_stub
 
 
 RelayStub = Callable[[Iterable[RelayFrame]], RelayAck]
