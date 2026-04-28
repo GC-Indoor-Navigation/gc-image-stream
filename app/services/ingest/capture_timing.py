@@ -1,4 +1,4 @@
-from app.services.stream.recorder import ExperimentRecorder
+from app.services.stream.experiment_recorder import ExperimentRecorder
 
 
 def calculate_next_capture_at(

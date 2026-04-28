@@ -4,7 +4,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.services.frame_service import create_frame
-from app.services.stream.experiment import get_stream_experiment_recorder
+from app.services.stream.stream_experiment import get_stream_experiment_recorder
 from app.services.stream.relay import StreamRelayService, stream_relay_service
 from app.services.stream.state import StreamState, stream_state
 from app.utils.file_utils import build_frame_path

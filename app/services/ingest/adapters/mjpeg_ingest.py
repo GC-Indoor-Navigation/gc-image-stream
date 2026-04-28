@@ -13,7 +13,7 @@ from app.services.ingest.adapters.base import (
 )
 from app.services.ingest.adapters.mjpeg_stream import iter_mjpeg_frames
 from app.services.ingest.capture_timing import log_schedule_lag
-from app.services.stream.experiment import get_stream_experiment_recorder
+from app.services.stream.stream_experiment import get_stream_experiment_recorder
 
 
 FrameIteratorFactory = Callable[[httpx.Client, CameraInputConfig], Iterable[bytes]]

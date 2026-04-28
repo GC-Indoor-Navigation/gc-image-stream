@@ -11,7 +11,7 @@ from app.routes.debug import router as debug_router
 from app.routes.frames import router as frames_router
 from app.routes.monitoring import router as monitoring_router
 from app.routes.sync import router as sync_router
-from app.services.stream.experiment import clear_stream_experiment_recorder
+from app.services.stream.stream_experiment import clear_stream_experiment_recorder
 from app.services.stream.relay import stream_relay_service
 from app.services.stream.state import stream_state
 from app.utils import file_utils

@@ -3,7 +3,7 @@ import re
 
 from app.services.ingest.adapters.mjpeg_stream import extract_mjpeg_frames
 from app.services.ingest.capture_timing import calculate_next_capture_at
-from app.services.stream.recorder import (
+from app.services.stream.experiment_recorder import (
     ExperimentContext,
     close_experiment_recorder,
     start_generic_experiment_recorder,

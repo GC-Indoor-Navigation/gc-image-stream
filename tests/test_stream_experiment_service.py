@@ -6,7 +6,7 @@ from app.services.ingest.adapters.mjpeg_ingest import (
     CameraSessionConfig,
     run_mjpeg_camera_session,
 )
-from app.services.stream.experiment import (
+from app.services.stream.stream_experiment import (
     clear_stream_experiment_recorder,
     configure_stream_experiment_recorder,
 )

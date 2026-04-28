@@ -1,9 +1,12 @@
-from app.services.stream.experiment import (
+from app.services.stream.stream_experiment import (
     clear_stream_experiment_recorder,
     configure_stream_experiment_recorder,
     get_stream_experiment_recorder,
 )
-from app.services.stream.recorder import ExperimentContext, ExperimentRecorder
+from app.services.stream.experiment_recorder import (
+    ExperimentContext,
+    ExperimentRecorder,
+)
 from app.services.stream.relay import StreamRelayService, stream_relay_service
 from app.services.stream.state import (
     CameraStreamState,

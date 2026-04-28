@@ -1,4 +1,4 @@
-from app.services.stream.recorder import (
+from app.services.stream.experiment_recorder import (
     ExperimentContext,
     ExperimentRecorder,
     close_experiment_recorder,

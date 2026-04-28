@@ -7,7 +7,7 @@ from app.db import SessionLocal
 from app.services.ingest.adapters.base import CameraInputConfig, CameraInputRuntime
 from app.services.ingest.ingest_pipeline import ingest_frame
 from app.services.ingest.capture_timing import log_schedule_lag
-from app.services.stream.experiment import get_stream_experiment_recorder
+from app.services.stream.stream_experiment import get_stream_experiment_recorder
 
 
 def download_snapshot(
