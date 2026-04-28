@@ -1,4 +1,4 @@
-from app.services.ingest.adapters.base import (
+from app.services.ingest.adapters.adapter_runtime import (
     CameraInputConfig,
     CameraInputRuntime,
     stop_camera_input,

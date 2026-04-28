@@ -6,7 +6,7 @@ import httpx
 
 from app.db import SessionLocal
 from app.services.ingest.ingest_pipeline import ingest_frame
-from app.services.ingest.adapters.base import (
+from app.services.ingest.adapters.adapter_runtime import (
     CameraInputConfig,
     CameraInputRuntime,
     stop_camera_input,

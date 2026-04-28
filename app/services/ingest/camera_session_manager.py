@@ -1,6 +1,10 @@
 from dataclasses import dataclass
 
-from app.services.ingest.adapters.base import CameraInputConfig, CameraInputRuntime, stop_camera_input
+from app.services.ingest.adapters.adapter_runtime import (
+    CameraInputConfig,
+    CameraInputRuntime,
+    stop_camera_input,
+)
 from app.services.ingest.adapters.mjpeg_ingest import start_mjpeg_camera_session
 from app.services.ingest.adapters.snapshot_ingest import start_snapshot_camera_session
 
