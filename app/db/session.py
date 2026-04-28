@@ -1,5 +1,5 @@
 from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 from app.core.server import DATABASE_URL
 
@@ -15,8 +15,6 @@ SessionLocal = sessionmaker(
     autoflush=False,
     bind=engine,
 )
-
-Base = declarative_base()
 
 
 FRAME_SCHEMA_UPDATES = {
@@ -59,7 +57,6 @@ SYNC_GROUP_SCHEMA_UPDATES = {
 }
 
 
-# 기존 DB에 필요한 sync_group 컬럼이 없으면 보강한다.
 def ensure_database_schema():
     inspector = inspect(engine)
 
@@ -103,10 +100,10 @@ def ensure_database_schema():
             connection.execute(text(sql))
 
 
-# 요청 단위 DB 세션을 생성하고 종료한다.
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
