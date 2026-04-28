@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from app.utils import file_utils
+from app.infrastructure.storage import file_utils
 
 
 def test_parse_filename_returns_device_and_timestamp():

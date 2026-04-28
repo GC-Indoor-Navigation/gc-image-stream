@@ -7,10 +7,6 @@ from app.services.stream.experiment_recorder import (
     ExperimentContext,
     ExperimentRecorder,
 )
-from app.services.stream.processing_relay_client import (
-    ProcessingRelayService,
-    processing_relay_service,
-)
 from app.services.stream.state import (
     CameraStreamState,
     StreamFrameState,
@@ -22,7 +18,6 @@ from app.services.stream.state import (
 __all__ = [
     "CameraStreamState",
     "StreamFrameState",
-    "ProcessingRelayService",
     "StreamState",
     "clear_stream_experiment_recorder",
     "configure_stream_experiment_recorder",
@@ -30,6 +25,5 @@ __all__ = [
     "ExperimentContext",
     "ExperimentRecorder",
     "get_stream_experiment_recorder",
-    "processing_relay_service",
     "stream_state",
 ]

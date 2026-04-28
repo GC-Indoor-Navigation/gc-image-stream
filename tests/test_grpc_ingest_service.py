@@ -2,8 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from app.models import Frame
-from app.services.ingest.adapters.grpc_ingest import (
+from app.infrastructure.grpc.grpc_ingest_server import (
     GrpcIngestService,
     IngestAck,
     IngestFrame,
@@ -14,7 +13,8 @@ from app.services.ingest.adapters.grpc_ingest import (
     serialize_ingest_ack,
     serialize_ingest_frame,
 )
-from app.services.stream.processing_relay_client import ProcessingRelayService
+from app.infrastructure.grpc.processing_relay_client import ProcessingRelayService
+from app.models import Frame
 from app.services.stream.state import StreamState
 
 

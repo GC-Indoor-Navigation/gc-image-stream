@@ -2,7 +2,7 @@ from concurrent import futures
 
 import pytest
 
-from app.contracts.processing_relay import (
+from app.infrastructure.contracts.processing_relay import (
     RelayAck,
     RelayFrame,
     add_frame_relay_servicer,

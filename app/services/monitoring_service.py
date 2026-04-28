@@ -1,7 +1,7 @@
 from pathlib import Path
 
+from app.infrastructure.grpc.processing_relay_client import processing_relay_service
 from app.models import Frame
-from app.services.stream.processing_relay_client import processing_relay_service
 from app.services.stream.state import (
     CameraStreamState,
     StreamState,

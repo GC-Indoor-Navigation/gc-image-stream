@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.schemas import FrameResponse
 from app.services.frame_service import create_frame, get_frames
-from app.utils.file_utils import build_frame_path, parse_filename
+from app.infrastructure.storage.file_utils import build_frame_path, parse_filename
 
 router = APIRouter(prefix="/frames", tags=["frames"])
 

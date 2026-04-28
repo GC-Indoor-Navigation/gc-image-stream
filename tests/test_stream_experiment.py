@@ -6,12 +6,12 @@ from app.services.ingest.adapters.mjpeg_ingest import (
     CameraSessionConfig,
     run_mjpeg_camera_session,
 )
+from app.infrastructure.grpc.processing_relay_client import ProcessingRelayService
 from app.services.stream.stream_experiment import (
     clear_stream_experiment_recorder,
     configure_stream_experiment_recorder,
 )
 from app.services.ingest.ingest_pipeline import ingest_frame
-from app.services.stream.processing_relay_client import ProcessingRelayService
 from app.services.stream.state import StreamState
 
 

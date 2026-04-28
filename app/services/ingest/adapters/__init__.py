@@ -3,7 +3,7 @@ from app.services.ingest.adapters.adapter_runtime import (
     CameraInputRuntime,
     stop_camera_input,
 )
-from app.services.ingest.adapters.grpc_ingest import (
+from app.infrastructure.grpc.grpc_ingest_server import (
     GrpcIngestService,
     IngestAck,
     IngestFrame,

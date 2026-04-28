@@ -5,8 +5,8 @@ from dataclasses import asdict, dataclass, field
 from typing import Callable, Iterable
 
 from app.db import SessionLocal
+from app.infrastructure.grpc.processing_relay_client import processing_relay_service
 from app.services.ingest.ingest_pipeline import ingest_frame
-from app.services.stream.processing_relay_client import processing_relay_service
 from app.services.stream.state import stream_state
 
 

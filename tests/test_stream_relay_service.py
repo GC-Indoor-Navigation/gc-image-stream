@@ -1,8 +1,7 @@
 from time import sleep
 
-from app.contracts.processing_relay import RelayAck, RelayFrame
-
-from app.services.stream.processing_relay_client import ProcessingRelayService
+from app.infrastructure.contracts.processing_relay import RelayAck, RelayFrame
+from app.infrastructure.grpc.processing_relay_client import ProcessingRelayService
 
 
 def test_processing_relay_service_enqueue_is_noop_when_disabled():
