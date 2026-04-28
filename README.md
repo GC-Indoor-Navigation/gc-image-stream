@@ -34,6 +34,7 @@ Out of scope:
 - local file storage for collected frames
 - SQLite-based metadata management
 - gRPC frame relay from collectors to a processing server
+- optional gRPC direct ingest from app clients into Stream Server
 - stream state monitoring and debug endpoints for latest frames
 - internal camera session worker path for Stream Server ingestion
 - server-side gRPC relay queue from Stream Server to Processing Server
@@ -59,8 +60,26 @@ camera/
   mjpeg_collector.py    legacy standalone MJPEG collector
   core.py               shared collector logic
 fake_camera_generator.py test data generator for fake cameras
+proto/              gRPC contract drafts for ingest and relay
 tests/              automated tests
 ```
+
+## Planned gRPC Direct Ingest
+
+The next primary input path after MJPEG workers is direct app-to-server gRPC
+ingest. A draft contract lives in [`proto/stream_ingest.proto`](proto/stream_ingest.proto).
+
+Current draft direction:
+
+- Android app -> `FrameIngestService.StreamFrames`
+- request type -> `stream IngestFrame`
+- response type -> `IngestAck`
+- Stream Server keeps local storage, DB registration, monitoring/debug state,
+  and downstream relay to Processing Server
+
+The ingest draft keeps both device wall-clock and monotonic timestamps so sync
+logic can later use device-relative ordering without losing server-side latency
+visibility.
 
 ## Quick Start
 
@@ -85,6 +104,8 @@ AUTO_SYNC_ENABLED=false
 STREAM_RELAY_ENABLED=false
 STREAM_RELAY_TARGET=127.0.0.1:50051
 STREAM_RELAY_TIMEOUT_SEC=
+GRPC_INGEST_ENABLED=false
+GRPC_INGEST_BIND=127.0.0.1:50052
 EXPERIMENT_ENABLED=false
 EXPERIMENT_ID=
 EXPERIMENT_LOG_DIR=
@@ -137,6 +158,10 @@ Primary Stream Server experiment logging uses the root `.env` values
 capture, ingest registration, and relay events are written under
 `experiment_logs/<experiment-id>/`. Leave `EXPERIMENT_ID=` empty when you want
 the server to create a new timestamped folder automatically for each run.
+
+Direct gRPC ingest from app clients is controlled by `GRPC_INGEST_ENABLED` and
+`GRPC_INGEST_BIND`. When enabled, the Stream Server starts a gRPC listener in
+the same process and routes incoming frames into `ingest_frame()`.
 
 ### 3. Run the server
 

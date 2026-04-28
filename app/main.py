@@ -15,6 +15,8 @@ from app.config.server import (
     FRAME_COMPRESS_BATCH_SIZE,
     FRAME_COMPRESS_JPEG_QUALITY,
     FRAME_MAINTENANCE_INTERVAL_SEC,
+    GRPC_INGEST_BIND,
+    GRPC_INGEST_ENABLED,
     PROCESSING_SERVER_URL,
     STORAGE_DIR,
     STREAM_RELAY_ENABLED,
@@ -28,6 +30,7 @@ from app.routes.monitoring import router as monitoring_router
 from app.routes.sync import router as sync_router
 from app.services.camera_session_manager import camera_session_manager
 from app.services.frame_maintenance_service import compress_old_dispatched_frames
+from app.services.grpc_ingest_service import grpc_ingest_service
 from app.services.stream_relay_service import stream_relay_service
 from app.services.stream_experiment_service import (
     clear_stream_experiment_recorder,
@@ -225,6 +228,22 @@ async def startup_event():
         )
         logger.info(format_log_event("stream_relay_disabled"))
 
+    if GRPC_INGEST_ENABLED:
+        grpc_ingest_service.configure(
+            bind=GRPC_INGEST_BIND,
+            enabled=True,
+        )
+        grpc_ingest_service.start()
+        logger.info(
+            format_log_event(
+                "grpc_ingest_started",
+                bind=grpc_ingest_service.status()["bind"],
+            )
+        )
+    else:
+        grpc_ingest_service.configure(bind="", enabled=False)
+        logger.info(format_log_event("grpc_ingest_disabled"))
+
     if CAMERA_SESSIONS_ENABLED:
         camera_session_manager.start_all(camera_configs)
         logger.info(
@@ -273,6 +292,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     camera_session_manager.stop_all()
+    grpc_ingest_service.stop()
     stream_relay_service.stop()
     clear_stream_experiment_recorder()
     logger.info(format_log_event("camera_sessions_stopped"))
