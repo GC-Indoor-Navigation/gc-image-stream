@@ -3,6 +3,7 @@ import os
 from app.config.env import (
     get_optional_bool_env,
     get_optional_csv_env,
+    get_optional_str_env,
 )
 from app.services.ingest.adapters.adapter_runtime import CameraInputConfig
 
@@ -20,11 +21,17 @@ def build_camera_session_configs_from_env() -> list[CameraInputConfig]:
 
 def build_camera_session_config(camera_id: str) -> CameraInputConfig:
     prefix = camera_id.upper()
-    source_kind = get_camera_env(prefix, "INPUT_TYPE", default="mjpeg").lower()
+    source_kind = get_camera_env(
+        prefix,
+        "INPUT_TYPE",
+        default=get_optional_str_env("CAMERA_INPUT_TYPE", "mjpeg").lower(),
+    ).lower()
     if source_kind == "mjpeg":
         source_url = get_camera_env(prefix, "STREAM_URL", required=True)
     elif source_kind == "snapshot":
         source_url = get_camera_env(prefix, "SNAPSHOT_URL", required=True)
+    elif source_kind == "grpc":
+        source_url = ""
     else:
         raise RuntimeError(f"Unsupported camera input type: {prefix}_INPUT_TYPE={source_kind}")
     interval_raw = get_camera_env(prefix, "COLLECT_INTERVAL_SEC", default="1.0")

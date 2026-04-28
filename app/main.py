@@ -16,7 +16,6 @@ from app.config.server import (
     FRAME_COMPRESS_JPEG_QUALITY,
     FRAME_MAINTENANCE_INTERVAL_SEC,
     GRPC_INGEST_BIND,
-    GRPC_INGEST_ENABLED,
     PROCESSING_SERVER_URL,
     STORAGE_DIR,
     STREAM_RELAY_ENABLED,
@@ -198,6 +197,15 @@ async def startup_event():
     camera_configs = []
     if CAMERA_SESSIONS_ENABLED:
         camera_configs = build_camera_session_configs_from_env()
+    worker_camera_configs = [
+        config
+        for config in camera_configs
+        if config.source_kind in {"mjpeg", "snapshot"}
+    ]
+    grpc_ingest_enabled = any(
+        config.source_kind == "grpc"
+        for config in camera_configs
+    )
 
     configure_stream_experiment_recorder(
         experiment_log_dir=EXPERIMENT_LOG_DIR,
@@ -228,7 +236,7 @@ async def startup_event():
         )
         logger.info(format_log_event("stream_relay_disabled"))
 
-    if GRPC_INGEST_ENABLED:
+    if grpc_ingest_enabled:
         grpc_ingest_service.configure(
             bind=GRPC_INGEST_BIND,
             enabled=True,
@@ -244,12 +252,12 @@ async def startup_event():
         grpc_ingest_service.configure(bind="", enabled=False)
         logger.info(format_log_event("grpc_ingest_disabled"))
 
-    if CAMERA_SESSIONS_ENABLED:
-        camera_session_manager.start_all(camera_configs)
+    if worker_camera_configs:
+        camera_session_manager.start_all(worker_camera_configs)
         logger.info(
             format_log_event(
                 "camera_sessions_started",
-                count=len(camera_configs),
+                count=len(worker_camera_configs),
             )
         )
     else:
