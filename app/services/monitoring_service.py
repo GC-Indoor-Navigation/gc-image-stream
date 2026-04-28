@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from app.models import Frame
-from app.services.stream.relay import stream_relay_service
+from app.services.stream.processing_relay_client import processing_relay_service
 from app.services.stream.state import (
     CameraStreamState,
     StreamState,
@@ -103,4 +103,4 @@ def latest_frame_file_exists(db, device_id: str, state: StreamState = stream_sta
 
 
 def get_relay_status():
-    return stream_relay_service.status()
+    return processing_relay_service.status()

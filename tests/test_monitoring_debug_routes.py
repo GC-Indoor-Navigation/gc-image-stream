@@ -1,5 +1,5 @@
 from app.services.ingest.ingest_pipeline import ingest_frame
-from app.services.stream.relay import stream_relay_service
+from app.services.stream.processing_relay_client import processing_relay_service
 from app.services.stream.state import stream_state
 
 
@@ -123,8 +123,8 @@ def test_debug_timestamp_delta_uses_latest_stream_state(client, session_factory)
 
 
 def test_monitoring_relay_returns_relay_status(client):
-    stream_relay_service.clear()
-    stream_relay_service.configure(target="127.0.0.1:50051", enabled=True)
+    processing_relay_service.clear()
+    processing_relay_service.configure(target="127.0.0.1:50051", enabled=True)
 
     response = client.get("/monitoring/relay")
 

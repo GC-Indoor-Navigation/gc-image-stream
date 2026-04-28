@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from app.services.ingest.ingest_pipeline import ingest_frame
-from app.services.stream.relay import StreamRelayService
+from app.services.stream.processing_relay_client import ProcessingRelayService
 from app.services.stream.state import StreamState
 
 
@@ -11,7 +11,7 @@ def test_ingest_frame_saves_file_registers_metadata_and_updates_state(
 ):
     db = session_factory()
     state = StreamState()
-    relay_service = StreamRelayService()
+    relay_service = ProcessingRelayService()
     try:
         result = ingest_frame(
             db,
@@ -49,7 +49,7 @@ def test_ingest_frame_uses_duplicate_registration_fallback(
 ):
     db = session_factory()
     state = StreamState()
-    relay_service = StreamRelayService()
+    relay_service = ProcessingRelayService()
     try:
         first = ingest_frame(
             db,
@@ -83,7 +83,7 @@ def test_ingest_frame_uses_duplicate_registration_fallback(
 def test_ingest_frame_enqueues_relay_when_enabled(session_factory):
     db = session_factory()
     state = StreamState()
-    relay_service = StreamRelayService()
+    relay_service = ProcessingRelayService()
     relay_service.configure(target="127.0.0.1:50051", enabled=True)
     try:
         result = ingest_frame(
@@ -105,7 +105,7 @@ def test_ingest_frame_enqueues_relay_when_enabled(session_factory):
 def test_ingest_frame_enqueues_relay_without_sequence(session_factory):
     db = session_factory()
     state = StreamState()
-    relay_service = StreamRelayService()
+    relay_service = ProcessingRelayService()
     relay_service.configure(target="127.0.0.1:50051", enabled=True)
     try:
         result = ingest_frame(

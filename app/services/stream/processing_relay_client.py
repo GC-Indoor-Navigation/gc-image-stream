@@ -17,7 +17,7 @@ class StreamRelayRuntime:
     worker: Thread
 
 
-class StreamRelayService:
+class ProcessingRelayService:
     def __init__(
         self,
         stub_factory: RelayStubFactory | None = None,
@@ -197,4 +197,4 @@ class StreamRelayService:
                     channel.close()
 
 
-stream_relay_service = StreamRelayService()
+processing_relay_service = ProcessingRelayService()

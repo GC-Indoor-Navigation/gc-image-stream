@@ -6,7 +6,7 @@ from typing import Callable, Iterable
 
 from app.db import SessionLocal
 from app.services.ingest.ingest_pipeline import ingest_frame
-from app.services.stream.relay import stream_relay_service
+from app.services.stream.processing_relay_client import processing_relay_service
 from app.services.stream.state import stream_state
 
 
@@ -145,7 +145,7 @@ class GrpcIngestService:
         db_factory: Callable[[], object] = SessionLocal,
         ingest_func: Callable[..., dict] = ingest_frame,
         state=stream_state,
-        relay_service=stream_relay_service,
+        relay_service=processing_relay_service,
     ):
         self.bind = ""
         self.enabled = False

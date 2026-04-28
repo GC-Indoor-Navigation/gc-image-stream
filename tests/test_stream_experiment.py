@@ -11,7 +11,7 @@ from app.services.stream.stream_experiment import (
     configure_stream_experiment_recorder,
 )
 from app.services.ingest.ingest_pipeline import ingest_frame
-from app.services.stream.relay import StreamRelayService
+from app.services.stream.processing_relay_client import ProcessingRelayService
 from app.services.stream.state import StreamState
 
 
@@ -26,7 +26,7 @@ def test_ingest_frame_records_primary_path_experiment(tmp_path, session_factory)
     assert recorder is not None
 
     db = session_factory()
-    relay_service = StreamRelayService()
+    relay_service = ProcessingRelayService()
     relay_service.configure(target="127.0.0.1:50051", enabled=True)
     state = StreamState()
     try:

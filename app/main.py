@@ -35,7 +35,7 @@ from app.services.stream.stream_experiment import (
     clear_stream_experiment_recorder,
     configure_stream_experiment_recorder,
 )
-from app.services.stream.relay import stream_relay_service
+from app.services.stream.processing_relay_client import processing_relay_service
 from app.services.sync_service import (
     build_sync_groups,
     dispatch_sync_group,
@@ -208,12 +208,12 @@ async def startup_event():
     )
 
     if STREAM_RELAY_ENABLED:
-        stream_relay_service.configure(
+        processing_relay_service.configure(
             target=STREAM_RELAY_TARGET,
             timeout_sec=STREAM_RELAY_TIMEOUT_SEC,
             enabled=True,
         )
-        stream_relay_service.start()
+        processing_relay_service.start()
         logger.info(
             format_log_event(
                 "stream_relay_started",
@@ -221,7 +221,7 @@ async def startup_event():
             )
         )
     else:
-        stream_relay_service.configure(
+        processing_relay_service.configure(
             target="",
             timeout_sec=STREAM_RELAY_TIMEOUT_SEC,
             enabled=False,
@@ -293,7 +293,7 @@ async def startup_event():
 async def shutdown_event():
     camera_session_manager.stop_all()
     grpc_ingest_service.stop()
-    stream_relay_service.stop()
+    processing_relay_service.stop()
     clear_stream_experiment_recorder()
     logger.info(format_log_event("camera_sessions_stopped"))
 

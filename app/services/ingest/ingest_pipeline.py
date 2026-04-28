@@ -5,7 +5,10 @@ from sqlalchemy.orm import Session
 
 from app.services.frame_service import create_frame
 from app.services.stream.stream_experiment import get_stream_experiment_recorder
-from app.services.stream.relay import StreamRelayService, stream_relay_service
+from app.services.stream.processing_relay_client import (
+    ProcessingRelayService,
+    processing_relay_service,
+)
 from app.services.stream.state import StreamState, stream_state
 from app.utils.file_utils import build_frame_path
 from processing.grpc_relay import RelayFrame
@@ -20,7 +23,7 @@ def ingest_frame(
     content_type: str = "image/jpeg",
     filename: str | None = None,
     state: StreamState = stream_state,
-    relay_service: StreamRelayService = stream_relay_service,
+    relay_service: ProcessingRelayService = processing_relay_service,
 ):
     started_at = time.monotonic()
     target_filename = filename or f"{device_id}_{timestamp_ms}.jpg"

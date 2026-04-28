@@ -2,11 +2,11 @@ from time import sleep
 
 from processing.grpc_relay import RelayAck, RelayFrame
 
-from app.services.stream.relay import StreamRelayService
+from app.services.stream.processing_relay_client import ProcessingRelayService
 
 
-def test_stream_relay_service_enqueue_is_noop_when_disabled():
-    service = StreamRelayService()
+def test_processing_relay_service_enqueue_is_noop_when_disabled():
+    service = ProcessingRelayService()
 
     enqueued = service.enqueue(
         RelayFrame(
@@ -22,8 +22,8 @@ def test_stream_relay_service_enqueue_is_noop_when_disabled():
     assert service.status()["queue_size"] == 0
 
 
-def test_stream_relay_service_enqueue_tracks_queue_when_enabled():
-    service = StreamRelayService()
+def test_processing_relay_service_enqueue_tracks_queue_when_enabled():
+    service = ProcessingRelayService()
     service.configure(target="127.0.0.1:50051", enabled=True)
 
     enqueued = service.enqueue(
@@ -40,7 +40,7 @@ def test_stream_relay_service_enqueue_tracks_queue_when_enabled():
     assert service.status()["queue_size"] == 1
 
 
-def test_stream_relay_service_worker_sends_queued_frames():
+def test_processing_relay_service_worker_sends_queued_frames():
     captured_frames = []
 
     def stub_factory(target):
@@ -57,7 +57,7 @@ def test_stream_relay_service_worker_sends_queued_frames():
 
         return stub
 
-    service = StreamRelayService(stub_factory=stub_factory)
+    service = ProcessingRelayService(stub_factory=stub_factory)
     service.configure(
         target="127.0.0.1:50051",
         timeout_sec=1.0,
@@ -93,7 +93,7 @@ def test_stream_relay_service_worker_sends_queued_frames():
     assert status["last_ack_success"] is True
 
 
-def test_stream_relay_service_worker_reconnects_after_error():
+def test_processing_relay_service_worker_reconnects_after_error():
     captured_frames = []
     call_count = 0
 
@@ -115,7 +115,7 @@ def test_stream_relay_service_worker_reconnects_after_error():
 
         return stub
 
-    service = StreamRelayService(
+    service = ProcessingRelayService(
         stub_factory=stub_factory,
         reconnect_delay_sec=0.01,
     )

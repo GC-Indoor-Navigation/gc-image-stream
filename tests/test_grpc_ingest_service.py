@@ -14,7 +14,7 @@ from app.services.ingest.adapters.grpc_ingest import (
     serialize_ingest_ack,
     serialize_ingest_frame,
 )
-from app.services.stream.relay import StreamRelayService
+from app.services.stream.processing_relay_client import ProcessingRelayService
 from app.services.stream.state import StreamState
 
 
@@ -67,7 +67,7 @@ def test_grpc_ingest_service_streams_frames_into_ingest_path(session_factory, st
     service = GrpcIngestService(
         db_factory=session_factory,
         state=StreamState(),
-        relay_service=StreamRelayService(),
+        relay_service=ProcessingRelayService(),
     )
     service.configure(bind="127.0.0.1:0", enabled=True)
     service.start()
