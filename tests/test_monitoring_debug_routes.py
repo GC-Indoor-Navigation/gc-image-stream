@@ -1,4 +1,4 @@
-from app.services.ingest.core import ingest_frame
+from app.services.ingest.ingest_pipeline import ingest_frame
 from app.services.stream.relay import stream_relay_service
 from app.services.stream.state import stream_state
 

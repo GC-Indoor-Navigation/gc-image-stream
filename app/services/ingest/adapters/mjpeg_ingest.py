@@ -5,14 +5,14 @@ from typing import Callable, Iterable
 import httpx
 
 from app.db import SessionLocal
-from app.services.ingest.core import ingest_frame
+from app.services.ingest.ingest_pipeline import ingest_frame
 from app.services.ingest.adapters.base import (
     CameraInputConfig,
     CameraInputRuntime,
     stop_camera_input,
 )
 from app.services.ingest.adapters.mjpeg_stream import iter_mjpeg_frames
-from app.services.ingest.timing import log_schedule_lag
+from app.services.ingest.capture_timing import log_schedule_lag
 from app.services.stream.experiment import get_stream_experiment_recorder
 
 

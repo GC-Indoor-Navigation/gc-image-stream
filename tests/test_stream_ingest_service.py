@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app.services.ingest.core import ingest_frame
+from app.services.ingest.ingest_pipeline import ingest_frame
 from app.services.stream.relay import StreamRelayService
 from app.services.stream.state import StreamState
 
