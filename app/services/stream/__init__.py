@@ -3,6 +3,7 @@ from app.services.stream.experiment import (
     configure_stream_experiment_recorder,
     get_stream_experiment_recorder,
 )
+from app.services.stream.recorder import ExperimentContext, ExperimentRecorder
 from app.services.stream.relay import StreamRelayService, stream_relay_service
 from app.services.stream.state import (
     CameraStreamState,
@@ -20,6 +21,8 @@ __all__ = [
     "clear_stream_experiment_recorder",
     "configure_stream_experiment_recorder",
     "current_time_ms",
+    "ExperimentContext",
+    "ExperimentRecorder",
     "get_stream_experiment_recorder",
     "stream_relay_service",
     "stream_state",

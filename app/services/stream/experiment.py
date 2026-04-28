@@ -1,4 +1,4 @@
-from camera.collector.experiments import (
+from app.services.stream.recorder import (
     ExperimentContext,
     ExperimentRecorder,
     close_experiment_recorder,

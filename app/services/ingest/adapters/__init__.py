@@ -21,6 +21,10 @@ from app.services.ingest.adapters.mjpeg import (
     run_mjpeg_camera_session,
     start_mjpeg_camera_session,
 )
+from app.services.ingest.adapters.mjpeg_stream import (
+    extract_mjpeg_frames,
+    iter_mjpeg_frames,
+)
 from app.services.ingest.adapters.snapshot import (
     download_snapshot,
     run_snapshot_camera_session,
@@ -41,6 +45,8 @@ __all__ = [
     "deserialize_ingest_frame",
     "grpc_ingest_service",
     "download_snapshot",
+    "extract_mjpeg_frames",
+    "iter_mjpeg_frames",
     "run_mjpeg_camera_session",
     "run_snapshot_camera_session",
     "serialize_ingest_ack",
