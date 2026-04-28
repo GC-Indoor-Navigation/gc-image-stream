@@ -5,7 +5,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from app.logging_config import format_log_event
+from app.core.logging import format_log_event
 from app.models import Frame, SyncFrame, SyncGroup
 from app.services.sync_service import DISPATCH_STATUS_SUCCESS
 

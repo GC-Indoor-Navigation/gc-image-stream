@@ -1,4 +1,4 @@
-from app.config.env import get_float_env, get_required_env
+from app.core.env import get_float_env, get_required_env
 
 
 CAMERA_NAME = get_required_env("CAMERA_NAME")

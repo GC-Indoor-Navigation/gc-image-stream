@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app.routes import sync as sync_routes
+from app.api.routes import sync as sync_routes
 from app.services import sync_service
 
 

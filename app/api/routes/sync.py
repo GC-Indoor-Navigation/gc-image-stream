@@ -3,7 +3,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.config.server import PROCESSING_SERVER_URL
+from app.core.server import PROCESSING_SERVER_URL
 from app.db import get_db
 from app.schemas import SyncGroupListResponse, SyncGroupResponse, SyncSummaryResponse
 from app.services.sync_service import (

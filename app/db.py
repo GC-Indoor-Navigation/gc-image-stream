@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from app.config.server import DATABASE_URL
+from app.core.server import DATABASE_URL
 
 
 engine_kwargs = {}

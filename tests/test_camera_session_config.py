@@ -1,6 +1,6 @@
 import pytest
 
-from app.config.cameras import build_camera_session_configs_from_env
+from app.core.cameras import build_camera_session_configs_from_env
 
 
 def test_build_camera_session_configs_from_env(monkeypatch):

@@ -2,12 +2,12 @@ import asyncio
 import logging
 from fastapi import FastAPI
 
-from app.config.cameras import (
+from app.core.cameras import (
     CAMERA_SESSIONS_ENABLED,
     build_camera_session_configs_from_env,
 )
 from app.db import Base, engine, SessionLocal, ensure_database_schema
-from app.config.server import (
+from app.core.server import (
     AUTO_SYNC_ENABLED,
     EXPERIMENT_ID,
     EXPERIMENT_LOG_DIR,
@@ -22,11 +22,11 @@ from app.config.server import (
     STREAM_RELAY_TARGET,
     STREAM_RELAY_TIMEOUT_SEC,
 )
-from app.logging_config import configure_logging, format_log_event
-from app.routes.debug import router as debug_router
-from app.routes.frames import router as frames_router
-from app.routes.monitoring import router as monitoring_router
-from app.routes.sync import router as sync_router
+from app.core.logging import configure_logging, format_log_event
+from app.api.routes.debug import router as debug_router
+from app.api.routes.frames import router as frames_router
+from app.api.routes.monitoring import router as monitoring_router
+from app.api.routes.sync import router as sync_router
 from app.services.frame_maintenance_service import compress_old_dispatched_frames
 from app.services.ingest.adapters.grpc_ingest import grpc_ingest_service
 from app.services.ingest.camera_session_manager import camera_session_manager

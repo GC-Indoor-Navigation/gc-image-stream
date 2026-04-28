@@ -1,6 +1,6 @@
 import os
 
-from app.config.env import (
+from app.core.env import (
     get_optional_bool_env,
     get_optional_csv_env,
     get_optional_str_env,

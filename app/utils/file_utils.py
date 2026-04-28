@@ -3,7 +3,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from app.config.server import STORAGE_DIR
+from app.core.server import STORAGE_DIR
 
 
 # 디렉터리가 없으면 생성한다.

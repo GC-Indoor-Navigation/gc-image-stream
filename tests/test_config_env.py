@@ -1,6 +1,6 @@
 import pytest
 
-from app.config.env import get_optional_bool_env
+from app.core.env import get_optional_bool_env
 
 
 def test_get_optional_bool_env_uses_default_when_missing(monkeypatch):

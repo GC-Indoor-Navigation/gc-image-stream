@@ -4,7 +4,7 @@ from io import BytesIO
 import pytest
 from fastapi import HTTPException, UploadFile
 
-from app.routes import frames
+from app.api.routes import frames
 
 
 def test_upload_frame_removes_saved_file_when_persistence_fails(monkeypatch, tmp_path):
