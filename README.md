@@ -33,7 +33,7 @@ Out of scope:
 - FastAPI-based frame upload and registration endpoints
 - local file storage for collected frames
 - SQLite-based metadata management
-- gRPC frame relay from collectors to a processing server
+- gRPC frame relay from Stream Server to a processing server
 - optional gRPC direct ingest from app clients into Stream Server
 - stream state monitoring and debug endpoints for latest frames
 - internal camera session worker path for Stream Server ingestion
@@ -52,13 +52,10 @@ Out of scope:
 app/
   config/           configuration loading and separation
   routes/           API routes
-  services/         frame/group/dispatch business logic
+  services/
+    ingest/         input adapters and common ingest core
+    stream/         state, relay, and experiment runtime
   utils/            file/path utilities
-camera/
-  mjpeg_stream.py       MJPEG parsing and frame iterator
-  snapshot_collector.py snapshot collector
-  mjpeg_collector.py    legacy standalone MJPEG collector
-  core.py               shared collector logic
 fake_camera_generator.py test data generator for fake cameras
 proto/              gRPC contract drafts for ingest and relay
 tests/              automated tests
@@ -112,33 +109,6 @@ EXPERIMENT_LOG_DIR=
 CAMERA_SESSIONS_ENABLED=false
 ```
 
-If you use collector scripts, prepare per-camera env files such as `.env.camera1`.
-Standalone collector scripts are legacy/transitional runners. Their direct gRPC
-relay settings are fallback-only; the primary processing path is Stream Server
-relay through `STREAM_RELAY_ENABLED` and `STREAM_RELAY_TARGET`.
-Their local save and `REGISTER_API_URL` flow are also fallback-only; primary
-storage and DB registration happen inside Stream Server `ingest_frame()`.
-
-Example:
-
-```env
-CAMERA_NAME=camera1
-CAMERA_SNAPSHOT_URL=http://127.0.0.1:8080/shot.jpg
-CAMERA_STREAM_URL=http://127.0.0.1:8080/video
-COLLECT_INTERVAL_SEC=1.0
-REGISTER_API_URL=http://127.0.0.1:8000/frames/register
-EXPERIMENT_ID=camera1-mjpeg-relay
-EXPERIMENT_LOG_DIR=experiment_logs
-```
-
-Optional legacy direct relay for standalone collector experiments:
-
-```env
-EXPERIMENT_ENABLED=true
-GRPC_RELAY_TARGET=127.0.0.1:50051
-GRPC_RELAY_TIMEOUT_SEC=60
-```
-
 For internal Stream Server camera workers, configure a camera list in the server `.env`.
 
 Example:
@@ -177,15 +147,15 @@ the same process and routes incoming frames into `ingest_frame()`.
 
 ## Collector Experiment Logs
 
-Collector runs save experiment records by default under `experiment_logs/<experiment-id>/`.
+Stream Server runs save experiment records under `experiment_logs/<experiment-id>/`.
 
 - `events.jsonl`: capture, register, relay, and schedule-lag events
 - `summary.json`: aggregate counts, average fps, offsets, byte totals, and error counts
 
-Set `EXPERIMENT_ID` in each camera env file to pin a stable folder name when
-you want to compare repeated runs. Leave `EXPERIMENT_ID=` empty to create a new
-timestamped folder automatically each time. Set `EXPERIMENT_LOG_DIR=` to
-disable file logging for a run.
+Set `EXPERIMENT_ID` to pin a stable folder name when you want to compare
+repeated runs. Leave `EXPERIMENT_ID=` empty to create a new timestamped folder
+automatically each time. Set `EXPERIMENT_LOG_DIR=` to disable file logging for
+a run.
 
 ## API Summary
 
@@ -310,7 +280,7 @@ Automatic retry is handled by the server loop, and failed groups can also be ret
 - [`app/routes/sync.py`](app/routes/sync.py)
 - [`app/services/frame_service.py`](app/services/frame_service.py)
 - [`app/services/sync_service.py`](app/services/sync_service.py)
-- [`camera/snapshot_collector.py`](camera/snapshot_collector.py)
-- [`camera/mjpeg_collector.py`](camera/mjpeg_collector.py)
-- [`camera/mjpeg_stream.py`](camera/mjpeg_stream.py)
+- [`app/services/ingest/core.py`](app/services/ingest/core.py)
+- [`app/services/ingest/manager.py`](app/services/ingest/manager.py)
+- [`app/services/stream/relay.py`](app/services/stream/relay.py)
 - [`fake_camera_generator.py`](fake_camera_generator.py)
