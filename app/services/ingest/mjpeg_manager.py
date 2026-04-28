@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from app.services.camera.session import (
+from app.services.ingest.adapters.mjpeg import (
     CameraSessionConfig,
     CameraSessionRuntime,
     start_mjpeg_camera_session,

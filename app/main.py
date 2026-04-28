@@ -28,13 +28,13 @@ from app.routes.debug import router as debug_router
 from app.routes.frames import router as frames_router
 from app.routes.monitoring import router as monitoring_router
 from app.routes.sync import router as sync_router
-from app.services.camera.manager import camera_session_manager
 from app.services.frame_maintenance_service import compress_old_dispatched_frames
+from app.services.ingest.adapters.grpc import grpc_ingest_service
+from app.services.ingest.mjpeg_manager import camera_session_manager
 from app.services.stream.experiment import (
     clear_stream_experiment_recorder,
     configure_stream_experiment_recorder,
 )
-from app.services.stream.grpc_ingest import grpc_ingest_service
 from app.services.stream.relay import stream_relay_service
 from app.services.sync_service import (
     build_sync_groups,

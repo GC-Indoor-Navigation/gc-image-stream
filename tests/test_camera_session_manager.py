@@ -1,5 +1,5 @@
-from app.services.camera.manager import CameraSessionManager
-from app.services.camera.session import CameraSessionConfig, CameraSessionRuntime
+from app.services.ingest.adapters.mjpeg import CameraSessionConfig, CameraSessionRuntime
+from app.services.ingest.mjpeg_manager import CameraSessionManager
 
 
 class FakeWorker:
@@ -33,7 +33,7 @@ def test_camera_session_manager_starts_and_stops_sessions(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "app.services.camera.manager.start_mjpeg_camera_session",
+        "app.services.ingest.mjpeg_manager.start_mjpeg_camera_session",
         fake_start,
     )
 

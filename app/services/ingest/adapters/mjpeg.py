@@ -6,8 +6,8 @@ from typing import Callable, Iterable
 import httpx
 
 from app.db import SessionLocal
+from app.services.ingest.core import ingest_frame
 from app.services.stream.experiment import get_stream_experiment_recorder
-from app.services.stream.ingest import ingest_frame
 from camera.collector.timing import log_schedule_lag
 from camera.mjpeg_stream import iter_mjpeg_frames
 

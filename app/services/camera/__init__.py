@@ -1,5 +1,4 @@
-from app.services.camera.manager import CameraSessionManager, camera_session_manager
-from app.services.camera.session import (
+from app.services.ingest.adapters.mjpeg import (
     CameraSessionConfig,
     CameraSessionRuntime,
     default_frame_iterator_factory,
@@ -8,6 +7,7 @@ from app.services.camera.session import (
     start_mjpeg_camera_session,
     stop_camera_session,
 )
+from app.services.ingest.mjpeg_manager import CameraSessionManager, camera_session_manager
 
 __all__ = [
     "CameraSessionConfig",

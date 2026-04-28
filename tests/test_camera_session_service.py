@@ -1,7 +1,7 @@
 from threading import Event
 
 from app.models import Frame
-from app.services.camera.session import (
+from app.services.ingest.adapters.mjpeg import (
     CameraSessionConfig,
     run_mjpeg_camera_session,
 )

@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from app.models import Frame
-from app.services.stream.grpc_ingest import (
+from app.services.ingest.adapters.grpc import (
     GrpcIngestService,
     IngestAck,
     IngestFrame,
