@@ -2,7 +2,10 @@ import json
 import re
 from threading import Event
 
-from app.services.ingest.adapters.mjpeg import CameraSessionConfig, run_mjpeg_camera_session
+from app.services.ingest.adapters.mjpeg_ingest import (
+    CameraSessionConfig,
+    run_mjpeg_camera_session,
+)
 from app.services.stream.experiment import (
     clear_stream_experiment_recorder,
     configure_stream_experiment_recorder,

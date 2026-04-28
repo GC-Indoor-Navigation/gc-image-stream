@@ -1,4 +1,7 @@
-from app.services.ingest.adapters.mjpeg import CameraSessionConfig, CameraSessionRuntime
+from app.services.ingest.adapters.mjpeg_ingest import (
+    CameraSessionConfig,
+    CameraSessionRuntime,
+)
 from app.services.ingest.manager import CameraSessionManager
 
 

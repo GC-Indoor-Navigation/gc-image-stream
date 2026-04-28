@@ -3,7 +3,7 @@ from app.services.ingest.adapters.base import (
     CameraInputRuntime,
     stop_camera_input,
 )
-from app.services.ingest.adapters.grpc import (
+from app.services.ingest.adapters.grpc_ingest import (
     GrpcIngestService,
     IngestAck,
     IngestFrame,
@@ -15,7 +15,7 @@ from app.services.ingest.adapters.grpc import (
     serialize_ingest_ack,
     serialize_ingest_frame,
 )
-from app.services.ingest.adapters.mjpeg import (
+from app.services.ingest.adapters.mjpeg_ingest import (
     default_frame_iterator_factory,
     default_timestamp_factory,
     run_mjpeg_camera_session,
@@ -25,7 +25,7 @@ from app.services.ingest.adapters.mjpeg_stream import (
     extract_mjpeg_frames,
     iter_mjpeg_frames,
 )
-from app.services.ingest.adapters.snapshot import (
+from app.services.ingest.adapters.snapshot_ingest import (
     download_snapshot,
     run_snapshot_camera_session,
     start_snapshot_camera_session,

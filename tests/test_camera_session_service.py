@@ -1,11 +1,11 @@
 from threading import Event
 
 from app.models import Frame
-from app.services.ingest.adapters.mjpeg import (
+from app.services.ingest.adapters.mjpeg_ingest import (
     CameraSessionConfig,
     run_mjpeg_camera_session,
 )
-from app.services.ingest.adapters.snapshot import run_snapshot_camera_session
+from app.services.ingest.adapters.snapshot_ingest import run_snapshot_camera_session
 from app.services.stream.state import stream_state
 
 
@@ -63,7 +63,7 @@ def test_run_snapshot_camera_session_ingests_frames(session_factory, storage_dir
         return next(frames)
 
     monkeypatch.setattr(
-        "app.services.ingest.adapters.snapshot.download_snapshot",
+        "app.services.ingest.adapters.snapshot_ingest.download_snapshot",
         fake_download_snapshot,
     )
 
