@@ -14,6 +14,7 @@ def test_build_camera_session_configs_from_env(monkeypatch):
 
     assert [config.device_id for config in configs] == ["camera1", "camera2"]
     assert configs[0].source_url == "http://camera1.local/video"
+    assert configs[0].source_kind == "mjpeg"
     assert configs[0].collect_interval_sec == 0.1
     assert configs[0].capture_timeout_sec == 8.0
     assert configs[1].source_url == "http://camera2.local/video"
@@ -27,3 +28,17 @@ def test_build_camera_session_configs_requires_stream_url(monkeypatch):
 
     with pytest.raises(RuntimeError, match="CAMERA1_STREAM_URL"):
         build_camera_session_configs_from_env()
+
+
+def test_build_camera_session_configs_supports_snapshot_input(monkeypatch):
+    monkeypatch.setenv("CAMERA_SESSIONS", "camera1")
+    monkeypatch.setenv("CAMERA1_INPUT_TYPE", "snapshot")
+    monkeypatch.setenv("CAMERA1_SNAPSHOT_URL", "http://camera1.local/shot.jpg")
+    monkeypatch.setenv("CAMERA1_COLLECT_INTERVAL_SEC", "0.5")
+
+    configs = build_camera_session_configs_from_env()
+
+    assert configs[0].device_id == "camera1"
+    assert configs[0].source_kind == "snapshot"
+    assert configs[0].source_url == "http://camera1.local/shot.jpg"
+    assert configs[0].collect_interval_sec == 0.5

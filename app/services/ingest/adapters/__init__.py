@@ -1,3 +1,8 @@
+from app.services.ingest.adapters.base import (
+    CameraInputConfig,
+    CameraInputRuntime,
+    stop_camera_input,
+)
 from app.services.ingest.adapters.grpc import (
     GrpcIngestService,
     IngestAck,
@@ -11,18 +16,20 @@ from app.services.ingest.adapters.grpc import (
     serialize_ingest_frame,
 )
 from app.services.ingest.adapters.mjpeg import (
-    CameraSessionConfig,
-    CameraSessionRuntime,
     default_frame_iterator_factory,
     default_timestamp_factory,
     run_mjpeg_camera_session,
     start_mjpeg_camera_session,
-    stop_camera_session,
+)
+from app.services.ingest.adapters.snapshot import (
+    download_snapshot,
+    run_snapshot_camera_session,
+    start_snapshot_camera_session,
 )
 
 __all__ = [
-    "CameraSessionConfig",
-    "CameraSessionRuntime",
+    "CameraInputConfig",
+    "CameraInputRuntime",
     "GrpcIngestService",
     "IngestAck",
     "IngestFrame",
@@ -33,9 +40,12 @@ __all__ = [
     "deserialize_ingest_ack",
     "deserialize_ingest_frame",
     "grpc_ingest_service",
+    "download_snapshot",
     "run_mjpeg_camera_session",
+    "run_snapshot_camera_session",
     "serialize_ingest_ack",
     "serialize_ingest_frame",
     "start_mjpeg_camera_session",
-    "stop_camera_session",
+    "start_snapshot_camera_session",
+    "stop_camera_input",
 ]

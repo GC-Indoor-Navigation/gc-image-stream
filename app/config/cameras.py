@@ -4,13 +4,13 @@ from app.config.env import (
     get_optional_bool_env,
     get_optional_csv_env,
 )
-from app.services.ingest.adapters.mjpeg import CameraSessionConfig
+from app.services.ingest.adapters.base import CameraInputConfig
 
 
 CAMERA_SESSIONS_ENABLED = get_optional_bool_env("CAMERA_SESSIONS_ENABLED", False)
 
 
-def build_camera_session_configs_from_env() -> list[CameraSessionConfig]:
+def build_camera_session_configs_from_env() -> list[CameraInputConfig]:
     camera_ids = get_optional_csv_env("CAMERA_SESSIONS", [])
     return [
         build_camera_session_config(camera_id)
@@ -18,14 +18,21 @@ def build_camera_session_configs_from_env() -> list[CameraSessionConfig]:
     ]
 
 
-def build_camera_session_config(camera_id: str) -> CameraSessionConfig:
+def build_camera_session_config(camera_id: str) -> CameraInputConfig:
     prefix = camera_id.upper()
-    source_url = get_camera_env(prefix, "STREAM_URL", required=True)
+    source_kind = get_camera_env(prefix, "INPUT_TYPE", default="mjpeg").lower()
+    if source_kind == "mjpeg":
+        source_url = get_camera_env(prefix, "STREAM_URL", required=True)
+    elif source_kind == "snapshot":
+        source_url = get_camera_env(prefix, "SNAPSHOT_URL", required=True)
+    else:
+        raise RuntimeError(f"Unsupported camera input type: {prefix}_INPUT_TYPE={source_kind}")
     interval_raw = get_camera_env(prefix, "COLLECT_INTERVAL_SEC", default="1.0")
     timeout_raw = get_camera_env(prefix, "CAPTURE_TIMEOUT_SEC", default="10.0")
 
-    return CameraSessionConfig(
+    return CameraInputConfig(
         device_id=camera_id,
+        source_kind=source_kind,
         source_url=source_url,
         collect_interval_sec=parse_positive_float(
             f"{prefix}_COLLECT_INTERVAL_SEC",
