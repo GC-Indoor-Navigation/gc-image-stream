@@ -1,23 +1,9 @@
-from sqlalchemy import Column, Integer, String, BigInteger, ForeignKey, UniqueConstraint
+from sqlalchemy import BigInteger, Column, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
+
 from app.db import Base
 
 
-# 수집된 프레임 메타데이터를 저장하는 테이블이다.
-class Frame(Base):
-    __tablename__ = "frames"
-    __table_args__ = (
-        UniqueConstraint("device_id", "timestamp", name="uq_frame_device_timestamp"),
-    )
-
-    id = Column(Integer, primary_key=True, index=True)
-    device_id = Column(String, index=True, nullable=False)
-    timestamp = Column(BigInteger, index=True, nullable=False)
-    file_path = Column(String, nullable=False)
-    compressed_at = Column(BigInteger, nullable=True)
-
-
-# 시간 기준으로 묶인 sync group과 dispatch 상태를 저장한다.
 class SyncGroup(Base):
     __tablename__ = "sync_groups"
 
@@ -34,11 +20,10 @@ class SyncGroup(Base):
     frames = relationship(
         "SyncFrame",
         back_populates="sync_group",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
     )
 
 
-# sync group과 frame 사이의 연결 관계를 저장한다.
 class SyncFrame(Base):
     __tablename__ = "sync_frames"
 
@@ -48,3 +33,4 @@ class SyncFrame(Base):
 
     sync_group = relationship("SyncGroup", back_populates="frames")
     frame = relationship("Frame")
+
