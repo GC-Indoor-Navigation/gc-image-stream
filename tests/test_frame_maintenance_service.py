@@ -3,7 +3,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
 from app.models import Frame, SyncFrame, SyncGroup
-from app.services.frame_maintenance_service import (
+from app.services.frames.maintenance import (
     compress_old_dispatched_frames,
     get_frames_ready_for_compression,
 )
@@ -93,7 +93,7 @@ def test_compress_old_dispatched_frames_marks_frames_after_compression(monkeypat
             called.append((file_path, quality))
 
         monkeypatch.setattr(
-            "app.services.frame_maintenance_service.compress_frame_file",
+            "app.services.frames.maintenance.compress_frame_file",
             fake_compress,
         )
 

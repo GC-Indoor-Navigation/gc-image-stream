@@ -9,7 +9,7 @@ from app.infrastructure.grpc.processing_relay_client import (
     processing_relay_service,
 )
 from app.infrastructure.storage.file_utils import build_frame_path
-from app.services.frame_service import create_frame
+from app.services.frames.service import create_frame
 from app.services.stream.stream_experiment import get_stream_experiment_recorder
 from app.services.stream.state import StreamState, stream_state
 

@@ -3,8 +3,8 @@ from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.services.debug_service import get_latest_timestamp_delta
-from app.services.monitoring_service import get_latest_frame_path
+from app.services.monitoring.debug import get_latest_timestamp_delta
+from app.services.monitoring.service import get_latest_frame_path
 
 router = APIRouter(prefix="/debug", tags=["debug"])
 

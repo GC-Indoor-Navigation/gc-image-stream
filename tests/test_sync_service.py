@@ -6,8 +6,8 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
 from app.models import SyncFrame, SyncGroup
-from app.services.frame_service import create_frame
-from app.services.sync_service import (
+from app.services.frames.service import create_frame
+from app.services.sync.service import (
     build_dispatch_payload,
     build_sync_groups,
     can_manually_retry_group,

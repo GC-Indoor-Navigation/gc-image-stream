@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from app.api.routes import sync as sync_routes
-from app.services import sync_service
+from app.services.sync import service as sync_service
 
 
 def test_register_frame_is_idempotent(client):

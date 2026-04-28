@@ -1,4 +1,4 @@
-from app.services.monitoring_service import list_camera_states
+from app.services.monitoring.service import list_camera_states
 from app.services.stream.state import StreamState, stream_state
 
 

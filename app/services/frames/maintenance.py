@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.logging import format_log_event
 from app.models import Frame, SyncFrame, SyncGroup
-from app.services.sync_service import DISPATCH_STATUS_SUCCESS
+from app.services.sync.service import DISPATCH_STATUS_SUCCESS
 
 
 logger = logging.getLogger("gc_image_stream.frame_maintenance")

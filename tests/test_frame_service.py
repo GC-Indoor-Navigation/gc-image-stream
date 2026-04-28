@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
-from app.services.frame_service import create_frame, get_frames
+from app.services.frames.service import create_frame, get_frames
 
 
 def build_test_session():

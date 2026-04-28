@@ -10,8 +10,8 @@ from app.core.server import (
     PROCESSING_SERVER_URL,
 )
 from app.db import SessionLocal
-from app.services.frame_maintenance_service import compress_old_dispatched_frames
-from app.services.sync_service import (
+from app.services.frames.maintenance import compress_old_dispatched_frames
+from app.services.sync.service import (
     build_sync_groups,
     dispatch_sync_group,
     get_groups_ready_for_retry,
@@ -143,4 +143,3 @@ async def frame_maintenance_loop():
             db.close()
 
         await asyncio.sleep(FRAME_MAINTENANCE_INTERVAL_SEC)
-

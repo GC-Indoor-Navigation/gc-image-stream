@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.server import PROCESSING_SERVER_URL
 from app.db import get_db
 from app.schemas import SyncGroupListResponse, SyncGroupResponse, SyncSummaryResponse
-from app.services.sync_service import (
+from app.services.sync.service import (
     build_sync_groups,
     can_manually_retry_group,
     dispatch_sync_group,

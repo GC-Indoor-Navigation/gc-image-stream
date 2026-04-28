@@ -4,8 +4,8 @@ import json
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 
-from app.services.debug_service import get_latest_timestamp_delta
-from app.services.monitoring_service import (
+from app.services.monitoring.debug import get_latest_timestamp_delta
+from app.services.monitoring.service import (
     get_camera_state,
     get_relay_status,
     list_camera_states,
