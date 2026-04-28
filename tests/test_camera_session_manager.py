@@ -1,8 +1,15 @@
+import importlib
+
 from app.services.ingest.adapters.mjpeg_ingest import (
     CameraSessionConfig,
     CameraSessionRuntime,
 )
-from app.services.ingest.manager import CameraSessionManager
+from app.services.ingest.camera_session_manager import CameraSessionManager
+
+
+camera_session_manager_module = importlib.import_module(
+    "app.services.ingest.camera_session_manager"
+)
 
 
 class FakeWorker:
@@ -35,10 +42,7 @@ def test_camera_session_manager_starts_and_stops_sessions(monkeypatch):
             worker=FakeWorker(),
         )
 
-    monkeypatch.setattr(
-        "app.services.ingest.manager.start_mjpeg_camera_session",
-        fake_start,
-    )
+    monkeypatch.setattr(camera_session_manager_module, "start_mjpeg_camera_session", fake_start)
 
     configs = [
         CameraSessionConfig("camera1", "http://camera1.local/video", 0.1),
@@ -69,7 +73,8 @@ def test_camera_session_manager_starts_snapshot_sessions(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "app.services.ingest.manager.start_snapshot_camera_session",
+        camera_session_manager_module,
+        "start_snapshot_camera_session",
         fake_start,
     )
 
