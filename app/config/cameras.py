@@ -4,7 +4,7 @@ from app.config.env import (
     get_optional_bool_env,
     get_optional_csv_env,
 )
-from app.services.camera_session_service import CameraSessionConfig
+from app.services.camera.session import CameraSessionConfig
 
 
 CAMERA_SESSIONS_ENABLED = get_optional_bool_env("CAMERA_SESSIONS_ENABLED", False)

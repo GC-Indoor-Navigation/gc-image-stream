@@ -2,7 +2,7 @@ from time import sleep
 
 from processing.grpc_relay import RelayAck, RelayFrame
 
-from app.services.stream_relay_service import StreamRelayService
+from app.services.stream.relay import StreamRelayService
 
 
 def test_stream_relay_service_enqueue_is_noop_when_disabled():

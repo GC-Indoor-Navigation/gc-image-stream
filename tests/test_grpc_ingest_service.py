@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from app.models import Frame
-from app.services.grpc_ingest_service import (
+from app.services.stream.grpc_ingest import (
     GrpcIngestService,
     IngestAck,
     IngestFrame,
@@ -14,8 +14,8 @@ from app.services.grpc_ingest_service import (
     serialize_ingest_ack,
     serialize_ingest_frame,
 )
-from app.services.stream_relay_service import StreamRelayService
-from app.services.stream_state import StreamState
+from app.services.stream.relay import StreamRelayService
+from app.services.stream.state import StreamState
 
 
 def test_ingest_frame_round_trip_preserves_metadata_and_bytes():

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
 
-from app.services.stream_experiment_service import get_stream_experiment_recorder
+from app.services.stream.experiment import get_stream_experiment_recorder
 from processing.grpc_relay import RelayAck, RelayFrame, build_frame_relay_stub
 
 

@@ -1,11 +1,11 @@
 from threading import Event
 
 from app.models import Frame
-from app.services.camera_session_service import (
+from app.services.camera.session import (
     CameraSessionConfig,
     run_mjpeg_camera_session,
 )
-from app.services.stream_state import stream_state
+from app.services.stream.state import stream_state
 
 
 def test_run_mjpeg_camera_session_ingests_frames(session_factory, storage_dir):

@@ -3,10 +3,10 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from app.services.stream_experiment_service import get_stream_experiment_recorder
 from app.services.frame_service import create_frame
-from app.services.stream_relay_service import StreamRelayService, stream_relay_service
-from app.services.stream_state import StreamState, stream_state
+from app.services.stream.experiment import get_stream_experiment_recorder
+from app.services.stream.relay import StreamRelayService, stream_relay_service
+from app.services.stream.state import StreamState, stream_state
 from app.utils.file_utils import build_frame_path
 from processing.grpc_relay import RelayFrame
 

@@ -1,5 +1,5 @@
 from app.services.monitoring_service import list_camera_states
-from app.services.stream_state import StreamState, stream_state
+from app.services.stream.state import StreamState, stream_state
 
 
 def get_latest_timestamp_delta(state: StreamState = stream_state):

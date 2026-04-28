@@ -1,4 +1,4 @@
-from app.services.stream_state import StreamState
+from app.services.stream.state import StreamState
 
 
 def test_stream_state_tracks_latest_frame_and_sequence_gap():

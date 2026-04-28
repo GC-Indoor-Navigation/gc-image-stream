@@ -5,9 +5,9 @@ from dataclasses import asdict, dataclass, field
 from typing import Callable, Iterable
 
 from app.db import SessionLocal
-from app.services.stream_ingest_service import ingest_frame
-from app.services.stream_relay_service import stream_relay_service
-from app.services.stream_state import stream_state
+from app.services.stream.ingest import ingest_frame
+from app.services.stream.relay import stream_relay_service
+from app.services.stream.state import stream_state
 
 
 SERVICE_NAME = "gc_image_stream.ingest.v1.FrameIngestService"
