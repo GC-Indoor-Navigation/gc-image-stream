@@ -40,13 +40,11 @@ MJPEG worker or gRPC ingest
 
 Both paths converge on the same ingest pipeline.
 
-The Stream Server currently exposes two gRPC ingest contracts:
+The Stream Server gRPC ingest contract is:
 
-- `proto/stream_ingest.proto`
-  - `gc_image_stream.ingest.v1.FrameIngestService`
 - `proto/frame_ingest.proto`
   - `gc.collector.v1.FrameIngestService`
-  - Android collector compatibility path
+  - Android collector path
 
 ## Quick Start
 

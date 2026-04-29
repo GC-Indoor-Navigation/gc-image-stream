@@ -3,35 +3,25 @@ from pathlib import Path
 
 import pytest
 
-from app.infrastructure.grpc.generated import (
-    frame_ingest_pb2,
-    frame_ingest_pb2_grpc,
-    stream_ingest_pb2_grpc,
-)
+from app.infrastructure.grpc.generated import frame_ingest_pb2
 from app.infrastructure.grpc.grpc_ingest_server import (
-    CollectorFrameMetadata,
-    CollectorFramePacket,
-    CollectorStreamFramesResponse,
+    FrameMetadata,
+    FramePacket,
     GrpcIngestService,
-    IngestAck,
-    IngestFrame,
-    IngestMetadata,
+    StreamFramesResponse,
     build_frame_ingest_stub,
-    deserialize_ingest_ack,
-    deserialize_ingest_frame,
-    serialize_ingest_ack,
-    serialize_ingest_frame,
+    deserialize_frame_packet,
+    serialize_frame_packet,
 )
 from app.infrastructure.grpc.processing_relay_client import ProcessingRelayService
 from app.models import Frame
 from app.services.stream.state import StreamState
 
 
-def test_ingest_frame_round_trip_preserves_metadata_and_bytes():
-    frame = IngestFrame(
-        metadata=IngestMetadata(
-            session_id="run-1",
-            camera_id="camera1",
+def test_frame_packet_round_trip_preserves_metadata_and_bytes():
+    frame = FramePacket(
+        metadata=FrameMetadata(
+            camera_id="rear_main",
             device_id="android_a14_001",
             frame_sequence=7,
             device_timestamp_ms=1_234,
@@ -39,110 +29,34 @@ def test_ingest_frame_round_trip_preserves_metadata_and_bytes():
             width=1280,
             height=720,
             format="jpeg",
-            orientation_deg=90,
             fps_target=10,
             focus_mode="fixed",
-            exposure_locked=True,
-            white_balance_locked=True,
-            app_version="1.0.0",
+            orientation_deg=90,
+            sensor_timestamp_ns=123_456,
+            focus_lock_requested=True,
+            focus_lock_support="supported",
+            focus_lock_applied="applied",
+            exposure_lock_requested=True,
+            exposure_lock_support="supported",
+            exposure_lock_applied="applied",
+            white_balance_lock_requested=True,
+            white_balance_lock_support="supported",
+            white_balance_lock_applied="applied",
+            manual_exposure_requested=True,
+            manual_exposure_support="supported",
+            manual_exposure_applied="applied",
+            iso_requested=200,
+            iso_applied=180,
+            exposure_time_ns_requested=4_000_000,
+            exposure_time_ns_applied=3_800_000,
+            focal_length_mm=5.43,
         ),
-        image_bytes=b"\xff\xd8frame\xff\xd9",
-        content_length=9,
-        app_sent_at_ms=1_240,
+        jpeg=b"\xff\xd8frame\xff\xd9",
     )
 
-    restored = deserialize_ingest_frame(serialize_ingest_frame(frame))
+    restored = deserialize_frame_packet(serialize_frame_packet(frame))
 
     assert restored == frame
-
-
-def test_ingest_ack_round_trip_preserves_fields():
-    ack = IngestAck(
-        success=True,
-        received_count=3,
-        message="ok",
-        server_ack_timestamp_ms=1_999,
-        warnings=["content_length mismatch"],
-    )
-
-    restored = deserialize_ingest_ack(serialize_ingest_ack(ack))
-
-    assert restored == ack
-
-
-def test_grpc_ingest_service_streams_frames_into_ingest_path(session_factory, storage_dir):
-    grpc = pytest.importorskip("grpc")
-
-    service = GrpcIngestService(
-        db_factory=session_factory,
-        state=StreamState(),
-        relay_service=ProcessingRelayService(),
-    )
-    service.configure(bind="127.0.0.1:0", enabled=True)
-    service.start()
-
-    try:
-        channel = grpc.insecure_channel(service.status()["bind"])
-        stub = stream_ingest_pb2_grpc.FrameIngestServiceStub(channel).StreamFrames
-        frames = [
-            IngestFrame(
-                metadata=IngestMetadata(
-                    session_id="run-1",
-                    camera_id="camera1",
-                    device_id="android_a14_001",
-                    frame_sequence=1,
-                    device_timestamp_ms=1_000,
-                    device_monotonic_ns=10,
-                    width=1280,
-                    height=720,
-                    format="jpeg",
-                    orientation_deg=90,
-                    fps_target=10,
-                ),
-                image_bytes=b"frame-1",
-                content_length=7,
-                app_sent_at_ms=1_001,
-            ),
-            IngestFrame(
-                metadata=IngestMetadata(
-                    session_id="run-1",
-                    camera_id="camera1",
-                    device_id="android_a14_001",
-                    frame_sequence=2,
-                    device_timestamp_ms=1_100,
-                    device_monotonic_ns=11,
-                    width=1280,
-                    height=720,
-                    format="jpeg",
-                    orientation_deg=90,
-                    fps_target=10,
-                ),
-                image_bytes=b"frame-2",
-                content_length=7,
-                app_sent_at_ms=1_101,
-            ),
-        ]
-
-        ack = stub(iter(frames), timeout=5.0)
-
-        assert ack.success is True
-        assert ack.received_count == 2
-        assert ack.warnings == []
-
-        db = session_factory()
-        try:
-            stored_frames = db.query(Frame).order_by(Frame.timestamp.asc()).all()
-        finally:
-            db.close()
-
-        assert [(frame.device_id, frame.timestamp) for frame in stored_frames] == [
-            ("camera1", 1_000),
-            ("camera1", 1_100),
-        ]
-        assert Path(stored_frames[0].file_path).read_bytes() == b"frame-1"
-        assert Path(stored_frames[1].file_path).read_bytes() == b"frame-2"
-    finally:
-        service.stop()
 
 
 def test_collector_proto_field_numbers_match_android_contract():
@@ -165,9 +79,9 @@ def test_collector_proto_field_numbers_match_android_contract():
     assert metadata_fields["focal_length_mm"].number == 35
 
 
-def test_collector_frame_packet_round_trip_preserves_metadata_and_bytes():
-    packet = CollectorFramePacket(
-        metadata=CollectorFrameMetadata(
+def test_frame_packet_parse_from_string_preserves_metadata_and_bytes():
+    packet = FramePacket(
+        metadata=FrameMetadata(
             camera_id="camera1",
             device_id="android_a14_001",
             frame_sequence=11,
@@ -202,7 +116,7 @@ def test_collector_frame_packet_round_trip_preserves_metadata_and_bytes():
         jpeg=b"\xff\xd8android\xff\xd9",
     )
 
-    restored = CollectorFramePacket()
+    restored = FramePacket()
     restored.ParseFromString(packet.SerializeToString())
 
     assert restored == packet
@@ -224,10 +138,10 @@ def test_grpc_ingest_service_streams_android_collector_packets_into_ingest_path(
 
     try:
         channel = grpc.insecure_channel(service.status()["bind"])
-        stub = frame_ingest_pb2_grpc.FrameIngestServiceStub(channel).StreamFrames
+        stub = build_frame_ingest_stub(channel)
         packets = [
-            CollectorFramePacket(
-                metadata=CollectorFrameMetadata(
+            FramePacket(
+                metadata=FrameMetadata(
                     camera_id="rear_main",
                     device_id="android_a14_001",
                     frame_sequence=9,
@@ -265,7 +179,7 @@ def test_grpc_ingest_service_streams_android_collector_packets_into_ingest_path(
 
         response = stub(iter(packets), timeout=5.0)
 
-        assert isinstance(response, CollectorStreamFramesResponse)
+        assert isinstance(response, StreamFramesResponse)
         assert response.received_frames == 1
         assert response.message == "collector ingest stream completed"
 
@@ -332,11 +246,11 @@ def test_collector_packets_prefer_device_id_and_fall_back_to_camera_id(session_f
         relay_service=ProcessingRelayService(),
     )
 
-    response = service._stream_collector_frames(
+    response = service._stream_frames(
         iter(
             [
-                CollectorFramePacket(
-                    metadata=CollectorFrameMetadata(
+                FramePacket(
+                    metadata=FrameMetadata(
                         camera_id="rear_main",
                         device_id="android_a14_001",
                         frame_sequence=1,
@@ -345,8 +259,8 @@ def test_collector_packets_prefer_device_id_and_fall_back_to_camera_id(session_f
                     ),
                     jpeg=b"frame-1",
                 ),
-                CollectorFramePacket(
-                    metadata=CollectorFrameMetadata(
+                FramePacket(
+                    metadata=FrameMetadata(
                         camera_id="rear_ultra_wide",
                         frame_sequence=2,
                         device_timestamp_ms=2_000,
