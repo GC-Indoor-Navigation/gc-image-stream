@@ -5,6 +5,7 @@ New-Item -ItemType File -Force app\infrastructure\grpc\generated\__init__.py | O
   -I proto `
   --python_out=app\infrastructure\grpc\generated `
   --grpc_python_out=app\infrastructure\grpc\generated `
+  proto\frame_ingest.proto `
   proto\stream_ingest.proto `
   proto\processing_relay.proto
 

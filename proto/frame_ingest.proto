@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package gc.collector.v1;
+
+option java_multiple_files = true;
+option java_package = "com.gc.collector.proto";
+
+service FrameIngestService {
+  rpc StreamFrames(stream FramePacket) returns (StreamFramesResponse);
+}
+
+message FramePacket {
+  FrameMetadata metadata = 1;
+  bytes jpeg = 2;
+}
+
+message FrameMetadata {
+  string camera_id = 1;
+  string device_id = 2;
+  int64 frame_sequence = 3;
+  int64 device_timestamp_ms = 4;
+  int64 device_monotonic_ns = 5;
+  int32 width = 6;
+  int32 height = 7;
+  string format = 8;
+  int32 fps_target = 9;
+  string focus_mode = 10;
+  bool focus_locked = 11;
+  bool exposure_locked = 12;
+  bool white_balance_locked = 13;
+  bool zoom_disabled = 14;
+  int32 orientation_deg = 15;
+  int64 sensor_timestamp_ns = 16;
+  bool focus_lock_requested = 17;
+  string focus_lock_support = 18;
+  string focus_lock_applied = 19;
+  bool exposure_lock_requested = 20;
+  string exposure_lock_support = 21;
+  string exposure_lock_applied = 22;
+  bool white_balance_lock_requested = 23;
+  string white_balance_lock_support = 24;
+  string white_balance_lock_applied = 25;
+  string fps_target_support = 26;
+  string resolution_support = 27;
+  string manual_exposure_support = 28;
+  bool manual_exposure_requested = 29;
+  string manual_exposure_applied = 30;
+  int32 iso_requested = 31;
+  optional int32 iso_applied = 32;
+  int64 exposure_time_ns_requested = 33;
+  optional int64 exposure_time_ns_applied = 34;
+  optional float focal_length_mm = 35;
+}
+
+message StreamFramesResponse {
+  int64 received_frames = 1;
+  string message = 2;
+}
