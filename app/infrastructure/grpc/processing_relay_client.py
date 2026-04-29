@@ -3,12 +3,14 @@ from dataclasses import dataclass
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
 
-from app.infrastructure.contracts.processing_relay import (
-    RelayAck,
-    RelayFrame,
-    build_frame_relay_stub,
+from app.infrastructure.grpc.generated import (
+    processing_relay_pb2,
+    processing_relay_pb2_grpc,
 )
 from app.services.stream.stream_experiment import get_stream_experiment_recorder
+
+RelayFrame = processing_relay_pb2.RelayFrame
+RelayAck = processing_relay_pb2.RelayAck
 
 
 RelayStub = Callable[[Iterable[RelayFrame]], RelayAck]
@@ -162,7 +164,7 @@ class ProcessingRelayService:
                         raise RuntimeError("grpcio is required for stream relay") from exc
 
                     channel = grpc.insecure_channel(self.target)
-                    stub = build_frame_relay_stub(channel)
+                    stub = processing_relay_pb2_grpc.FrameRelayServiceStub(channel).StreamFrames
 
                 ack = stub(
                     self._iter_frames(stop_event),

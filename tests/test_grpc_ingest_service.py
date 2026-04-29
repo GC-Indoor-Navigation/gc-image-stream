@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from app.infrastructure.grpc.generated import stream_ingest_pb2_grpc
 from app.infrastructure.grpc.grpc_ingest_server import (
     GrpcIngestService,
     IngestAck,
@@ -74,7 +75,7 @@ def test_grpc_ingest_service_streams_frames_into_ingest_path(session_factory, st
 
     try:
         channel = grpc.insecure_channel(service.status()["bind"])
-        stub = build_frame_ingest_stub(channel)
+        stub = stream_ingest_pb2_grpc.FrameIngestServiceStub(channel).StreamFrames
         frames = [
             IngestFrame(
                 metadata=IngestMetadata(

@@ -2,16 +2,13 @@ from concurrent import futures
 
 import pytest
 
-from app.infrastructure.contracts.processing_relay import (
-    RelayAck,
-    RelayFrame,
-    add_frame_relay_servicer,
-    build_frame_relay_stub,
-    deserialize_relay_ack,
-    deserialize_relay_frame,
-    serialize_relay_ack,
-    serialize_relay_frame,
+from app.infrastructure.grpc.generated import (
+    processing_relay_pb2,
+    processing_relay_pb2_grpc,
 )
+
+RelayAck = processing_relay_pb2.RelayAck
+RelayFrame = processing_relay_pb2.RelayFrame
 
 
 def test_relay_frame_round_trip_preserves_metadata_and_bytes():
@@ -24,7 +21,8 @@ def test_relay_frame_round_trip_preserves_metadata_and_bytes():
         file_path="storage/camera1/frame.jpg",
     )
 
-    restored = deserialize_relay_frame(serialize_relay_frame(frame))
+    restored = RelayFrame()
+    restored.ParseFromString(frame.SerializeToString())
 
     assert restored == frame
 
@@ -32,7 +30,8 @@ def test_relay_frame_round_trip_preserves_metadata_and_bytes():
 def test_relay_ack_round_trip_preserves_fields():
     ack = RelayAck(success=True, received_count=3, message="ok")
 
-    restored = deserialize_relay_ack(serialize_relay_ack(ack))
+    restored = RelayAck()
+    restored.ParseFromString(ack.SerializeToString())
 
     assert restored == ack
 
@@ -42,13 +41,22 @@ def test_grpc_relay_stream_round_trip():
 
     received_frames = []
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=1))
-    add_frame_relay_servicer(server, received_frames.append)
+
+    class Servicer(processing_relay_pb2_grpc.FrameRelayServiceServicer):
+        def StreamFrames(self, request_iterator, context):
+            received_count = 0
+            for frame in request_iterator:
+                received_count += 1
+                received_frames.append(frame)
+            return RelayAck(success=True, received_count=received_count, message="ok")
+
+    processing_relay_pb2_grpc.add_FrameRelayServiceServicer_to_server(Servicer(), server)
     port = server.add_insecure_port("127.0.0.1:0")
     server.start()
 
     try:
         channel = grpc.insecure_channel(f"127.0.0.1:{port}")
-        stub = build_frame_relay_stub(channel)
+        stub = processing_relay_pb2_grpc.FrameRelayServiceStub(channel).StreamFrames
 
         frames = [
             RelayFrame(

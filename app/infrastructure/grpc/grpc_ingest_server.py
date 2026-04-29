@@ -3,21 +3,46 @@ from concurrent import futures
 from typing import Callable, Iterable
 
 from app.db import SessionLocal
-from app.infrastructure.contracts.stream_ingest import (
-    IngestAck,
-    IngestFrame,
-    IngestMetadata,
-    METHOD_NAME,
-    SERVICE_NAME,
-    build_frame_ingest_stub,
-    deserialize_ingest_ack,
-    deserialize_ingest_frame,
-    serialize_ingest_ack,
-    serialize_ingest_frame,
-)
+from app.infrastructure.grpc.generated import stream_ingest_pb2, stream_ingest_pb2_grpc
 from app.infrastructure.grpc.processing_relay_client import processing_relay_service
 from app.services.ingest.ingest_pipeline import ingest_frame
 from app.services.stream.state import stream_state
+
+IngestMetadata = stream_ingest_pb2.FrameMetadata
+IngestFrame = stream_ingest_pb2.IngestFrame
+IngestAck = stream_ingest_pb2.IngestAck
+
+
+def serialize_ingest_frame(frame: IngestFrame) -> bytes:
+    return frame.SerializeToString()
+
+
+def deserialize_ingest_frame(payload: bytes) -> IngestFrame:
+    message = IngestFrame()
+    message.ParseFromString(payload)
+    return message
+
+
+def serialize_ingest_ack(ack: IngestAck) -> bytes:
+    return ack.SerializeToString()
+
+
+def deserialize_ingest_ack(payload: bytes) -> IngestAck:
+    message = IngestAck()
+    message.ParseFromString(payload)
+    return message
+
+
+def build_frame_ingest_stub(channel):
+    return stream_ingest_pb2_grpc.FrameIngestServiceStub(channel).StreamFrames
+
+
+class _FrameIngestServicer(stream_ingest_pb2_grpc.FrameIngestServiceServicer):
+    def __init__(self, handler: Callable[[Iterable[IngestFrame], object], IngestAck]):
+        self._handler = handler
+
+    def StreamFrames(self, request_iterator, context):
+        return self._handler(request_iterator, context)
 
 
 def resolve_content_type(image_format: str) -> str:
@@ -79,17 +104,10 @@ class GrpcIngestService:
             raise RuntimeError("grpcio is required for grpc ingest") from exc
 
         server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
-        generic_handler = grpc.method_handlers_generic_handler(
-            SERVICE_NAME,
-            {
-                METHOD_NAME: grpc.stream_unary_rpc_method_handler(
-                    self._stream_frames,
-                    request_deserializer=deserialize_ingest_frame,
-                    response_serializer=serialize_ingest_ack,
-                )
-            },
+        stream_ingest_pb2_grpc.add_FrameIngestServiceServicer_to_server(
+            _FrameIngestServicer(self._stream_frames),
+            server,
         )
-        server.add_generic_rpc_handlers((generic_handler,))
         port = server.add_insecure_port(self.bind)
         if port <= 0:
             raise RuntimeError(f"failed to bind grpc ingest server: {self.bind}")

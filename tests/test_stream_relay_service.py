@@ -1,6 +1,6 @@
 from time import sleep
 
-from app.infrastructure.contracts.processing_relay import RelayAck, RelayFrame
+from app.infrastructure.grpc.generated.processing_relay_pb2 import RelayAck, RelayFrame
 from app.infrastructure.grpc.processing_relay_client import ProcessingRelayService
 
 

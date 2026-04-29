@@ -3,7 +3,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from app.infrastructure.contracts.processing_relay import RelayFrame
+from app.infrastructure.grpc.generated.processing_relay_pb2 import RelayFrame
 from app.infrastructure.grpc.processing_relay_client import (
     ProcessingRelayService,
     processing_relay_service,
