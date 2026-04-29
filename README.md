@@ -40,6 +40,9 @@ MJPEG worker or gRPC ingest
 
 Both paths converge on the same ingest pipeline.
 
+The gRPC ingest contract is defined in `proto/stream_ingest.proto` and is meant
+to stay wire-compatible with the Android client proto.
+
 ## Quick Start
 
 ### 1. Create a virtual environment
