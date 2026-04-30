@@ -21,6 +21,7 @@ def test_ingest_frame_records_primary_path_experiment(tmp_path, session_factory)
         experiment_log_dir=str(tmp_path),
         experiment_id="primary relay",
         duration_sec=None,
+        expected_device_count=None,
         storage_dir="storage",
         relay_target="127.0.0.1:50051",
         camera_ids=["camera1"],
@@ -61,6 +62,7 @@ def test_camera_session_records_capture_events(tmp_path, session_factory, storag
         experiment_log_dir=str(tmp_path),
         experiment_id="camera session",
         duration_sec=None,
+        expected_device_count=None,
         storage_dir=str(storage_dir),
         relay_target="",
         camera_ids=["camera1"],
@@ -100,6 +102,7 @@ def test_stream_experiment_recorder_generates_timestamped_run_id(tmp_path):
         experiment_log_dir=str(tmp_path),
         experiment_id="",
         duration_sec=None,
+        expected_device_count=None,
         storage_dir="storage",
         relay_target="127.0.0.1:50051",
         camera_ids=["camera1"],
@@ -118,6 +121,7 @@ def test_stream_experiment_recorder_stops_after_duration_limit(tmp_path, monkeyp
         experiment_log_dir=str(tmp_path),
         experiment_id="duration-window",
         duration_sec=1.0,
+        expected_device_count=None,
         storage_dir="storage",
         relay_target="127.0.0.1:50051",
         camera_ids=["camera1"],
@@ -152,3 +156,30 @@ def test_stream_experiment_recorder_stops_after_duration_limit(tmp_path, monkeyp
     assert summary["duration_limit_s"] == 1.0
     assert summary["registered_count"] == 0
     assert '"event":"experiment_finished"' in events
+
+
+def test_stream_experiment_gate_opens_after_expected_device_count(tmp_path):
+    recorder = configure_stream_experiment_recorder(
+        experiment_log_dir=str(tmp_path),
+        experiment_id="grpc-gate",
+        duration_sec=60.0,
+        expected_device_count=2,
+        storage_dir="storage",
+        relay_target="127.0.0.1:50051",
+        camera_ids=["camera1", "camera2"],
+    )
+    assert recorder is not None
+
+    assert recorder.observe_device("android_01") is False
+    assert recorder.started_at_monotonic is None
+    assert recorder.observe_device("android_02") is True
+    assert recorder.started_at_monotonic is not None
+
+    clear_stream_experiment_recorder()
+
+    summary = json.loads((tmp_path / "grpc-gate" / "summary.json").read_text(encoding="utf-8"))
+    assert summary["gate_enabled"] is True
+    assert summary["gate_opened"] is True
+    assert summary["expected_device_count"] == 2
+    assert summary["observed_device_ids"] == ["android_01", "android_02"]
+    assert summary["gate_wait_duration_s"] is not None

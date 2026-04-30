@@ -36,6 +36,11 @@ async def startup_application():
         for config in camera_configs
         if config.source_kind in {"mjpeg", "snapshot"}
     ]
+    grpc_camera_configs = [
+        config
+        for config in camera_configs
+        if config.source_kind == "grpc"
+    ]
     grpc_ingest_enabled = any(
         config.source_kind == "grpc"
         for config in camera_configs
@@ -45,6 +50,7 @@ async def startup_application():
         experiment_log_dir=EXPERIMENT_LOG_DIR,
         experiment_id=EXPERIMENT_ID,
         duration_sec=EXPERIMENT_DURATION_SEC,
+        expected_device_count=len(grpc_camera_configs) if grpc_ingest_enabled else None,
         storage_dir=STORAGE_DIR,
         relay_target=STREAM_RELAY_TARGET if STREAM_RELAY_ENABLED else "",
         camera_ids=[config.device_id for config in camera_configs],

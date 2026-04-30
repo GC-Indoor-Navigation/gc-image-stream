@@ -15,6 +15,10 @@ from app.infrastructure.grpc.grpc_ingest_server import (
 )
 from app.infrastructure.grpc.processing_relay_client import ProcessingRelayService
 from app.models import Frame
+from app.services.stream import (
+    clear_stream_experiment_recorder,
+    configure_stream_experiment_recorder,
+)
 from app.services.stream.state import StreamState
 
 
@@ -219,6 +223,67 @@ def test_grpc_ingest_service_streams_android_collector_packets_into_ingest_path(
         assert sidecar_payload["metadata"]["resolution_support"] == "1280x720"
     finally:
         service.stop()
+
+
+def test_grpc_ingest_service_records_capture_metrics_for_experiment_window(
+    tmp_path,
+    session_factory,
+):
+    grpc = pytest.importorskip("grpc")
+
+    recorder = configure_stream_experiment_recorder(
+        experiment_log_dir=str(tmp_path),
+        experiment_id="grpc-capture-metrics",
+        duration_sec=None,
+        expected_device_count=None,
+        storage_dir="storage",
+        relay_target="127.0.0.1:50051",
+        camera_ids=["camera1"],
+    )
+    assert recorder is not None
+
+    service = GrpcIngestService(
+        db_factory=session_factory,
+        state=StreamState(),
+        relay_service=ProcessingRelayService(),
+    )
+    service.configure(bind="127.0.0.1:0", enabled=True)
+    service.start()
+
+    try:
+        channel = grpc.insecure_channel(service.status()["bind"])
+        stub = build_frame_ingest_stub(channel)
+        response = stub(
+            iter(
+                [
+                    FramePacket(
+                        metadata=FrameMetadata(
+                            camera_id="camera1",
+                            device_id="android_01",
+                            frame_sequence=1,
+                            device_timestamp_ms=10_000,
+                            format="jpeg",
+                        ),
+                        jpeg=b"grpc-frame",
+                    )
+                ]
+            ),
+            timeout=5.0,
+        )
+
+        assert response.received_frames == 1
+    finally:
+        service.stop()
+        clear_stream_experiment_recorder()
+
+    summary = json.loads(
+        (tmp_path / "grpc-capture-metrics" / "summary.json").read_text(encoding="utf-8")
+    )
+
+    assert summary["captured_count"] == 1
+    assert summary["registered_count"] == 1
+    assert summary["image_bytes_total"] == len(b"grpc-frame")
+    assert summary["average_fps"] > 0
 
 
 def test_collector_packets_prefer_device_id_and_fall_back_to_camera_id(session_factory, tmp_path):

@@ -1,4 +1,5 @@
 import json
+import time
 from concurrent import futures
 from pathlib import Path
 from typing import Callable, Iterable
@@ -12,6 +13,7 @@ from app.infrastructure.grpc.generated import (
 )
 from app.infrastructure.grpc.processing_relay_client import processing_relay_service
 from app.services.ingest.ingest_pipeline import ingest_frame
+from app.services.stream.stream_experiment import get_stream_experiment_recorder
 from app.services.stream.state import stream_state
 
 FrameMetadata = frame_ingest_pb2.FrameMetadata
@@ -161,6 +163,10 @@ class GrpcIngestService:
             content_type = resolve_content_type(metadata.format or "jpeg")
             camera_id = metadata.camera_id or "unknown"
             filename = f"{internal_device_id}_{camera_id}_{metadata.frame_sequence}.jpg"
+            received_at = time.monotonic()
+            experiment_recorder = get_stream_experiment_recorder()
+            if experiment_recorder is not None:
+                experiment_recorder.observe_device(internal_device_id)
 
             db = self.db_factory()
             try:
@@ -175,6 +181,21 @@ class GrpcIngestService:
                     state=self.state,
                     relay_service=self.relay_service,
                 )
+                ingested_at = time.monotonic()
+                if experiment_recorder is not None:
+                    experiment_recorder.record_capture(
+                        device_id=internal_device_id,
+                        timestamp_ms=metadata.device_timestamp_ms,
+                        sequence=metadata.frame_sequence or 0,
+                        capture_label="grpc_ingest",
+                        capture_elapsed=0.0,
+                        save_elapsed=ingested_at - received_at,
+                        cycle_elapsed=ingested_at - received_at,
+                        queue_size=0,
+                        scheduled_at=received_at,
+                        captured_at=received_at,
+                        image_bytes_size=len(request.jpeg),
+                    )
                 write_ingest_metadata_sidecar(
                     result["frame"].file_path,
                     {

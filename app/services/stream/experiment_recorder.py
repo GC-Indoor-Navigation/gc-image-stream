@@ -14,6 +14,7 @@ class ExperimentContext:
     experiment_log_dir: str | None
     experiment_id: str | None = None
     duration_sec: float | None = None
+    expected_device_count: int | None = None
     summary_fields: dict[str, Any] = field(default_factory=dict)
 
 
@@ -24,9 +25,17 @@ class ExperimentRecorder:
 
         self.context = context
         self.collector_type = context.collector_type
-        self.started_at_monotonic = time.monotonic()
-        self.started_at_ms = int(time.time() * 1000)
+        self.created_at_monotonic = time.monotonic()
+        self.created_at_ms = int(time.time() * 1000)
+        self.started_at_monotonic = (
+            None if context.expected_device_count else self.created_at_monotonic
+        )
+        self.started_at_ms = (
+            None if context.expected_device_count else self.created_at_ms
+        )
         self.duration_sec = context.duration_sec
+        self.expected_device_count = context.expected_device_count
+        self.observed_device_ids: set[str] = set()
         self.run_id = sanitize_experiment_id(
             context.experiment_id
             or build_default_experiment_id(
@@ -46,6 +55,12 @@ class ExperimentRecorder:
             "collector_type": context.collector_type,
             "run_name": context.run_name,
             **context.summary_fields,
+            "gate_enabled": self.expected_device_count is not None,
+            "expected_device_count": self.expected_device_count,
+            "observed_device_ids": [],
+            "gate_opened": self.expected_device_count is None,
+            "gate_opened_at_ms": self.started_at_ms,
+            "gate_wait_duration_s": 0.0 if self.expected_device_count is None else None,
             "duration_limit_s": self.duration_sec,
             "started_at_ms": self.started_at_ms,
             "ended_at_ms": None,
@@ -69,17 +84,75 @@ class ExperimentRecorder:
             "save_elapsed_s_sum": 0.0,
             "save_elapsed_s_avg": None,
         }
-        self.record_event(
-            "experiment_started",
-            {
-                "events_path": self.events_path,
-                "summary_path": self.summary_path,
-            },
+        if self.started_at_monotonic is not None:
+            self._write_event_locked(
+                "experiment_started",
+                {
+                    "events_path": self.events_path,
+                    "summary_path": self.summary_path,
+                },
+            )
+
+    def _runtime_s(self) -> float:
+        started_at = self.started_at_monotonic or self.created_at_monotonic
+        return round(time.monotonic() - started_at, 6)
+
+    def _write_event_locked(self, event_type: str, fields: dict | None = None):
+        payload = {
+            "event": event_type,
+            "wall_time_ms": int(time.time() * 1000),
+            "runtime_s": self._runtime_s(),
+        }
+        if fields:
+            payload.update(fields)
+        self.events_file.write(
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
         )
+        self.events_file.flush()
+
+    def observe_device(self, device_id: str | None) -> bool:
+        with self.lock:
+            if self.closed:
+                return False
+
+            if device_id:
+                self.observed_device_ids.add(device_id)
+                self.summary["observed_device_ids"] = sorted(self.observed_device_ids)
+
+            if self.started_at_monotonic is not None:
+                return True
+
+            if self.expected_device_count is None:
+                return False
+
+            if len(self.observed_device_ids) < self.expected_device_count:
+                return False
+
+            self.started_at_monotonic = time.monotonic()
+            self.started_at_ms = int(time.time() * 1000)
+            self.summary["started_at_ms"] = self.started_at_ms
+            self.summary["gate_opened"] = True
+            self.summary["gate_opened_at_ms"] = self.started_at_ms
+            self.summary["gate_wait_duration_s"] = round(
+                self.started_at_monotonic - self.created_at_monotonic,
+                6,
+            )
+            self._write_event_locked(
+                "experiment_started",
+                {
+                    "events_path": self.events_path,
+                    "summary_path": self.summary_path,
+                    "gate_wait_duration_s": self.summary["gate_wait_duration_s"],
+                    "observed_device_ids": self.summary["observed_device_ids"],
+                },
+            )
+            return True
 
     def _should_record(self) -> bool:
         with self.lock:
             if self.closed:
+                return False
+            if self.started_at_monotonic is None:
                 return False
             if self.duration_sec is not None:
                 elapsed = time.monotonic() - self.started_at_monotonic
@@ -92,19 +165,8 @@ class ExperimentRecorder:
         if not self._should_record():
             return
 
-        payload = {
-            "event": event_type,
-            "wall_time_ms": int(time.time() * 1000),
-            "runtime_s": round(time.monotonic() - self.started_at_monotonic, 6),
-        }
-        if fields:
-            payload.update(fields)
-
         with self.lock:
-            self.events_file.write(
-                json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
-            )
-            self.events_file.flush()
+            self._write_event_locked(event_type, fields)
 
     def record_capture(
         self,
@@ -120,6 +182,7 @@ class ExperimentRecorder:
         image_bytes_size: int,
         device_id: str | None = None,
     ):
+        self.observe_device(device_id)
         if not self._should_record():
             return
 
@@ -168,6 +231,7 @@ class ExperimentRecorder:
         error: str | None = None,
         device_id: str | None = None,
     ):
+        self.observe_device(device_id)
         if not self._should_record():
             return
 
@@ -199,6 +263,7 @@ class ExperimentRecorder:
         queue_size: int,
         device_id: str | None = None,
     ):
+        self.observe_device(device_id)
         if not self._should_record():
             return
 
@@ -272,7 +337,10 @@ class ExperimentRecorder:
             return
 
         ended_at_ms = int(time.time() * 1000)
-        duration_s = time.monotonic() - self.started_at_monotonic
+        if self.started_at_monotonic is None:
+            duration_s = 0.0
+        else:
+            duration_s = time.monotonic() - self.started_at_monotonic
 
         self.summary["ended_at_ms"] = ended_at_ms
         self.summary["duration_s"] = round(duration_s, 6)
@@ -297,7 +365,7 @@ class ExperimentRecorder:
         payload = {
             "event": "experiment_finished",
             "wall_time_ms": int(time.time() * 1000),
-            "runtime_s": round(time.monotonic() - self.started_at_monotonic, 6),
+            "runtime_s": self._runtime_s(),
             "duration_s": summary_payload["duration_s"],
             "captured_count": summary_payload["captured_count"],
             "registered_count": summary_payload["registered_count"],
