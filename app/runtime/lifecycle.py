@@ -1,28 +1,15 @@
-import asyncio
 import logging
 
-from app.runtime.background_jobs import (
-    AUTO_SYNC_INTERVAL_SEC,
-    AUTO_SYNC_THRESHOLD_MS,
-    FRAME_COMPRESS_AFTER_SEC,
-    auto_sync_loop,
-    frame_maintenance_loop,
-)
 from app.core.cameras import (
     CAMERA_SESSIONS_ENABLED,
     build_camera_session_configs_from_env,
 )
 from app.core.logging import format_log_event
 from app.core.server import (
-    AUTO_SYNC_ENABLED,
     EXPERIMENT_ID,
     EXPERIMENT_DURATION_SEC,
     EXPERIMENT_LOG_DIR,
-    FRAME_COMPRESS_BATCH_SIZE,
-    FRAME_COMPRESS_JPEG_QUALITY,
-    FRAME_MAINTENANCE_INTERVAL_SEC,
     GRPC_INGEST_BIND,
-    PROCESSING_SERVER_URL,
     STORAGE_DIR,
     STREAM_RELAY_ENABLED,
     STREAM_RELAY_TARGET,
@@ -110,35 +97,6 @@ async def startup_application():
         )
     else:
         logger.info(format_log_event("camera_sessions_disabled"))
-
-    if AUTO_SYNC_ENABLED:
-        asyncio.create_task(auto_sync_loop())
-        logger.info(
-            format_log_event(
-                "auto_sync_started",
-                interval_sec=AUTO_SYNC_INTERVAL_SEC,
-                threshold_ms=AUTO_SYNC_THRESHOLD_MS,
-                dispatch_url=PROCESSING_SERVER_URL,
-            )
-        )
-    else:
-        logger.info(
-            format_log_event(
-                "auto_sync_disabled",
-                reason="grpc_relay_primary_path",
-            )
-        )
-
-    asyncio.create_task(frame_maintenance_loop())
-    logger.info(
-        format_log_event(
-            "frame_maintenance_started",
-            interval_sec=FRAME_MAINTENANCE_INTERVAL_SEC,
-            compress_after_sec=FRAME_COMPRESS_AFTER_SEC,
-            quality=FRAME_COMPRESS_JPEG_QUALITY,
-            batch_size=FRAME_COMPRESS_BATCH_SIZE,
-        )
-    )
 
 
 async def shutdown_application():

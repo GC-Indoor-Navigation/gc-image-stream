@@ -3,7 +3,6 @@ from fastapi import FastAPI
 from app.api.routes.debug import router as debug_router
 from app.api.routes.frames import router as frames_router
 from app.api.routes.monitoring import router as monitoring_router
-from app.api.routes.sync import router as sync_router
 from app.runtime.lifecycle import shutdown_application, startup_application
 
 
@@ -19,7 +18,6 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(frames_router)
-    app.include_router(sync_router)
     app.include_router(monitoring_router)
     app.include_router(debug_router)
 

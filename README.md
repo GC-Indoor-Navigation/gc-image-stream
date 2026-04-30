@@ -10,7 +10,6 @@ an external Processing Server.
 - store image files and frame metadata
 - expose Monitoring / Debug Viewer state
 - relay frames to the Processing Server over gRPC
-- keep sync-group HTTP dispatch as a fallback path
 
 This repository does not implement Processing Server sync or AI logic.
 
@@ -60,9 +59,6 @@ py -3.12 -m venv .venv
 ```env
 DATABASE_URL=sqlite:///./frames.db
 STORAGE_DIR=storage
-
-PROCESSING_SERVER_URL=http://127.0.0.1:9000/process
-AUTO_SYNC_ENABLED=false
 
 GRPC_INGEST_BIND=127.0.0.1:50052
 

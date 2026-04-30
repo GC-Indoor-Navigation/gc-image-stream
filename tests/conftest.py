@@ -10,7 +10,6 @@ from app.db import Base, get_db
 from app.api.routes.debug import router as debug_router
 from app.api.routes.frames import router as frames_router
 from app.api.routes.monitoring import router as monitoring_router
-from app.api.routes.sync import router as sync_router
 from app.infrastructure.grpc.processing_relay_client import processing_relay_service
 from app.infrastructure.storage import file_utils
 from app.services.stream.stream_experiment import clear_stream_experiment_recorder
@@ -47,7 +46,6 @@ def app(session_factory, storage_dir):
     clear_stream_experiment_recorder()
     test_app = FastAPI()
     test_app.include_router(frames_router)
-    test_app.include_router(sync_router)
     test_app.include_router(monitoring_router)
     test_app.include_router(debug_router)
 

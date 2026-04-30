@@ -13,5 +13,3 @@ class Frame(Base):
     device_id = Column(String, index=True, nullable=False)
     timestamp = Column(BigInteger, index=True, nullable=False)
     file_path = Column(String, nullable=False)
-    compressed_at = Column(BigInteger, nullable=True)
-
