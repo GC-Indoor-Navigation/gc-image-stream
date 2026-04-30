@@ -16,6 +16,7 @@ from app.core.logging import format_log_event
 from app.core.server import (
     AUTO_SYNC_ENABLED,
     EXPERIMENT_ID,
+    EXPERIMENT_DURATION_SEC,
     EXPERIMENT_LOG_DIR,
     FRAME_COMPRESS_BATCH_SIZE,
     FRAME_COMPRESS_JPEG_QUALITY,
@@ -56,6 +57,7 @@ async def startup_application():
     configure_stream_experiment_recorder(
         experiment_log_dir=EXPERIMENT_LOG_DIR,
         experiment_id=EXPERIMENT_ID,
+        duration_sec=EXPERIMENT_DURATION_SEC,
         storage_dir=STORAGE_DIR,
         relay_target=STREAM_RELAY_TARGET if STREAM_RELAY_ENABLED else "",
         camera_ids=[config.device_id for config in camera_configs],

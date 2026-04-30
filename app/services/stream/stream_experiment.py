@@ -12,6 +12,7 @@ stream_experiment_recorder: ExperimentRecorder | None = None
 def configure_stream_experiment_recorder(
     experiment_log_dir: str,
     experiment_id: str,
+    duration_sec: float | None,
     storage_dir: str,
     relay_target: str,
     camera_ids: list[str] | None = None,
@@ -24,6 +25,7 @@ def configure_stream_experiment_recorder(
         run_name="stream-server",
         experiment_log_dir=experiment_log_dir,
         experiment_id=experiment_id or None,
+        duration_sec=duration_sec,
         summary_fields={
             "camera_name": "stream-server",
             "camera_ids": list(camera_ids or []),

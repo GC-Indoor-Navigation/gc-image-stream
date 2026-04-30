@@ -27,6 +27,12 @@ EXPERIMENT_LOG_DIR = (
     else ""
 )
 EXPERIMENT_ID = get_optional_str_env("EXPERIMENT_ID")
+_experiment_duration_sec = get_optional_float_env("EXPERIMENT_DURATION_SEC", 0.0)
+EXPERIMENT_DURATION_SEC = (
+    _experiment_duration_sec
+    if _experiment_duration_sec > 0
+    else None
+)
 FRAME_MAINTENANCE_INTERVAL_SEC = get_optional_float_env(
     "FRAME_MAINTENANCE_INTERVAL_SEC",
     60.0,

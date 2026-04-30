@@ -2,6 +2,7 @@ import json
 import re
 from threading import Event
 
+from app.services.stream import experiment_recorder as experiment_recorder_module
 from app.services.ingest.adapters.mjpeg_ingest import (
     CameraSessionConfig,
     run_mjpeg_camera_session,
@@ -19,6 +20,7 @@ def test_ingest_frame_records_primary_path_experiment(tmp_path, session_factory)
     recorder = configure_stream_experiment_recorder(
         experiment_log_dir=str(tmp_path),
         experiment_id="primary relay",
+        duration_sec=None,
         storage_dir="storage",
         relay_target="127.0.0.1:50051",
         camera_ids=["camera1"],
@@ -58,6 +60,7 @@ def test_camera_session_records_capture_events(tmp_path, session_factory, storag
     recorder = configure_stream_experiment_recorder(
         experiment_log_dir=str(tmp_path),
         experiment_id="camera session",
+        duration_sec=None,
         storage_dir=str(storage_dir),
         relay_target="",
         camera_ids=["camera1"],
@@ -96,6 +99,7 @@ def test_stream_experiment_recorder_generates_timestamped_run_id(tmp_path):
     recorder = configure_stream_experiment_recorder(
         experiment_log_dir=str(tmp_path),
         experiment_id="",
+        duration_sec=None,
         storage_dir="storage",
         relay_target="127.0.0.1:50051",
         camera_ids=["camera1"],
@@ -107,3 +111,44 @@ def test_stream_experiment_recorder_generates_timestamped_run_id(tmp_path):
 
     assert re.fullmatch(r"stream-server-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}", run_id)
     assert (tmp_path / run_id / "summary.json").is_file()
+
+
+def test_stream_experiment_recorder_stops_after_duration_limit(tmp_path, monkeypatch):
+    recorder = configure_stream_experiment_recorder(
+        experiment_log_dir=str(tmp_path),
+        experiment_id="duration-window",
+        duration_sec=1.0,
+        storage_dir="storage",
+        relay_target="127.0.0.1:50051",
+        camera_ids=["camera1"],
+    )
+    assert recorder is not None
+
+    started = recorder.started_at_monotonic
+    wall = recorder.started_at_ms
+
+    monkeypatch.setattr(
+        experiment_recorder_module.time,
+        "monotonic",
+        lambda: started + 1.1,
+    )
+    monkeypatch.setattr(
+        experiment_recorder_module.time,
+        "time",
+        lambda: (wall + 1100) / 1000,
+    )
+
+    recorder.record_registration(
+        status="registered",
+        device_id="camera1",
+        timestamp_ms=1000,
+        elapsed=0.01,
+        queue_size=0,
+    )
+
+    summary = json.loads((tmp_path / "duration-window" / "summary.json").read_text(encoding="utf-8"))
+    events = (tmp_path / "duration-window" / "events.jsonl").read_text(encoding="utf-8")
+
+    assert summary["duration_limit_s"] == 1.0
+    assert summary["registered_count"] == 0
+    assert '"event":"experiment_finished"' in events

@@ -13,6 +13,7 @@ class ExperimentContext:
     run_name: str
     experiment_log_dir: str | None
     experiment_id: str | None = None
+    duration_sec: float | None = None
     summary_fields: dict[str, Any] = field(default_factory=dict)
 
 
@@ -25,6 +26,7 @@ class ExperimentRecorder:
         self.collector_type = context.collector_type
         self.started_at_monotonic = time.monotonic()
         self.started_at_ms = int(time.time() * 1000)
+        self.duration_sec = context.duration_sec
         self.run_id = sanitize_experiment_id(
             context.experiment_id
             or build_default_experiment_id(
@@ -37,12 +39,14 @@ class ExperimentRecorder:
         self.events_path = os.path.join(self.run_dir, "events.jsonl")
         self.summary_path = os.path.join(self.run_dir, "summary.json")
         self.lock = Lock()
+        self.closed = False
         self.events_file = open(self.events_path, "a", encoding="utf-8")
         self.summary = {
             "experiment_id": self.run_id,
             "collector_type": context.collector_type,
             "run_name": context.run_name,
             **context.summary_fields,
+            "duration_limit_s": self.duration_sec,
             "started_at_ms": self.started_at_ms,
             "ended_at_ms": None,
             "duration_s": 0.0,
@@ -73,7 +77,21 @@ class ExperimentRecorder:
             },
         )
 
+    def _should_record(self) -> bool:
+        with self.lock:
+            if self.closed:
+                return False
+            if self.duration_sec is not None:
+                elapsed = time.monotonic() - self.started_at_monotonic
+                if elapsed >= self.duration_sec:
+                    self._close_locked()
+                    return False
+        return True
+
     def record_event(self, event_type: str, fields: dict | None = None):
+        if not self._should_record():
+            return
+
         payload = {
             "event": event_type,
             "wall_time_ms": int(time.time() * 1000),
@@ -102,6 +120,9 @@ class ExperimentRecorder:
         image_bytes_size: int,
         device_id: str | None = None,
     ):
+        if not self._should_record():
+            return
+
         offset_ms = max(0.0, (captured_at - scheduled_at) * 1000)
 
         with self.lock:
@@ -147,6 +168,9 @@ class ExperimentRecorder:
         error: str | None = None,
         device_id: str | None = None,
     ):
+        if not self._should_record():
+            return
+
         with self.lock:
             if status == "registered":
                 self.summary["registered_count"] += 1
@@ -175,6 +199,9 @@ class ExperimentRecorder:
         queue_size: int,
         device_id: str | None = None,
     ):
+        if not self._should_record():
+            return
+
         with self.lock:
             self.summary["relay_enqueued_count"] += 1
 
@@ -190,6 +217,9 @@ class ExperimentRecorder:
         )
 
     def record_relay_closed(self, success: bool, received_count: int, message: str):
+        if not self._should_record():
+            return
+
         with self.lock:
             self.summary["relay_closed_count"] += 1
 
@@ -203,6 +233,9 @@ class ExperimentRecorder:
         )
 
     def record_relay_error(self, error: str):
+        if not self._should_record():
+            return
+
         with self.lock:
             self.summary["relay_error_count"] += 1
 
@@ -214,6 +247,9 @@ class ExperimentRecorder:
         loop_elapsed: float,
         device_id: str | None = None,
     ):
+        if not self._should_record():
+            return
+
         with self.lock:
             self.summary["schedule_lag_count"] += 1
             self.summary["schedule_lag_skipped_total"] += skipped
@@ -228,42 +264,50 @@ class ExperimentRecorder:
         )
 
     def close(self):
+        with self.lock:
+            self._close_locked()
+
+    def _close_locked(self):
+        if self.closed:
+            return
+
         ended_at_ms = int(time.time() * 1000)
         duration_s = time.monotonic() - self.started_at_monotonic
 
-        with self.lock:
-            self.summary["ended_at_ms"] = ended_at_ms
-            self.summary["duration_s"] = round(duration_s, 6)
+        self.summary["ended_at_ms"] = ended_at_ms
+        self.summary["duration_s"] = round(duration_s, 6)
 
-            captured_count = self.summary["captured_count"]
-            if captured_count:
-                self.summary["offset_ms_avg"] = self.summary["offset_ms_sum"] / captured_count
-                self.summary["capture_elapsed_s_avg"] = (
-                    self.summary["capture_elapsed_s_sum"] / captured_count
-                )
-                self.summary["save_elapsed_s_avg"] = (
-                    self.summary["save_elapsed_s_sum"] / captured_count
-                )
-                self.summary["average_fps"] = (
-                    captured_count / duration_s if duration_s > 0 else 0.0
-                )
-            else:
-                self.summary["average_fps"] = 0.0
+        captured_count = self.summary["captured_count"]
+        if captured_count:
+            self.summary["offset_ms_avg"] = self.summary["offset_ms_sum"] / captured_count
+            self.summary["capture_elapsed_s_avg"] = (
+                self.summary["capture_elapsed_s_sum"] / captured_count
+            )
+            self.summary["save_elapsed_s_avg"] = (
+                self.summary["save_elapsed_s_sum"] / captured_count
+            )
+            self.summary["average_fps"] = (
+                captured_count / duration_s if duration_s > 0 else 0.0
+            )
+        else:
+            self.summary["average_fps"] = 0.0
 
-            summary_payload = dict(self.summary)
+        summary_payload = dict(self.summary)
 
-        self.record_event(
-            "experiment_finished",
-            {
-                "duration_s": summary_payload["duration_s"],
-                "captured_count": summary_payload["captured_count"],
-                "registered_count": summary_payload["registered_count"],
-                "relay_enqueued_count": summary_payload["relay_enqueued_count"],
-            },
+        payload = {
+            "event": "experiment_finished",
+            "wall_time_ms": int(time.time() * 1000),
+            "runtime_s": round(time.monotonic() - self.started_at_monotonic, 6),
+            "duration_s": summary_payload["duration_s"],
+            "captured_count": summary_payload["captured_count"],
+            "registered_count": summary_payload["registered_count"],
+            "relay_enqueued_count": summary_payload["relay_enqueued_count"],
+        }
+        self.events_file.write(
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
         )
-
-        with self.lock:
-            self.events_file.close()
+        self.events_file.flush()
+        self.events_file.close()
 
         with open(self.summary_path, "w", encoding="utf-8") as summary_file:
             json.dump(
@@ -273,6 +317,8 @@ class ExperimentRecorder:
                 indent=2,
                 sort_keys=True,
             )
+
+        self.closed = True
 
 
 def sanitize_experiment_id(value: str) -> str:
