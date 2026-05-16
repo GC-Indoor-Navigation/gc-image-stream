@@ -159,7 +159,7 @@ DEBUG_VIEWER_HTML = """<!doctype html>
     }
     .side {
       display: grid;
-      grid-template-rows: auto auto 1fr;
+      grid-template-rows: auto auto auto;
       gap: 12px;
       background: transparent;
       border: 0;
@@ -209,6 +209,10 @@ DEBUG_VIEWER_HTML = """<!doctype html>
     </section>
     <section class="side">
       <section>
+        <div class="section-head">gRPC Ingest</div>
+        <div id="ingestStatus" class="panel-body relay-grid"></div>
+      </section>
+      <section>
         <div class="section-head">Relay</div>
         <div id="relayStatus" class="panel-body relay-grid"></div>
       </section>
@@ -230,6 +234,7 @@ DEBUG_VIEWER_HTML = """<!doctype html>
     const selectedTitle = document.getElementById("selectedTitle");
     const lastUpdated = document.getElementById("lastUpdated");
     const relayStatus = document.getElementById("relayStatus");
+    const ingestStatus = document.getElementById("ingestStatus");
     const deltaList = document.getElementById("deltaList");
     const refreshButton = document.getElementById("refreshButton");
 
@@ -329,6 +334,19 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       ].join("");
     }
 
+    function renderIngest(status) {
+      const observed = (status.observed_device_ids || []).join(", ") || "-";
+      ingestStatus.innerHTML = [
+        metric("Enabled", status.enabled ? "true" : "false", status.enabled ? "ok" : ""),
+        metric("Running", status.running ? "true" : "false", status.running ? "ok" : "warn"),
+        metric("Bind", status.bind),
+        metric("Gate Enabled", status.gate_enabled ? "true" : "false", status.gate_enabled ? "ok" : ""),
+        metric("Gate Open", status.gate_open ? "true" : "false", status.gate_open ? "ok" : "warn"),
+        metric("Expected", status.expected_device_count ?? "-"),
+        metric("Observed", observed),
+      ].join("");
+    }
+
     function renderDelta(payload) {
       const items = payload.items || [];
       if (items.length === 0) {
@@ -349,6 +367,7 @@ DEBUG_VIEWER_HTML = """<!doctype html>
 
     function applyPayload(payload) {
       cameras = payload.cameras || [];
+      const ingest = payload.grpc_ingest || {};
       const relay = payload.relay || {};
       const delta = payload.timestamp_delta || { items: [] };
       if (!selectedDeviceId && cameras.length > 0) {
@@ -359,14 +378,16 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       }
       renderCameras();
       renderSelected();
+      renderIngest(ingest);
       renderRelay(relay);
       renderDelta(delta);
       lastUpdated.textContent = new Date().toLocaleTimeString();
     }
 
     async function loadFallback(forceImageReload = false) {
-      const [cameraResponse, relayResponse, deltaResponse] = await Promise.all([
+      const [cameraResponse, ingestResponse, relayResponse, deltaResponse] = await Promise.all([
         fetch("/monitoring/cameras"),
+        fetch("/monitoring/grpc-ingest"),
         fetch("/monitoring/relay"),
         fetch("/debug/timestamp-delta"),
       ]);
@@ -379,6 +400,7 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       }
       renderCameras();
       renderSelected(forceImageReload);
+      renderIngest(await ingestResponse.json());
       renderRelay(await relayResponse.json());
       renderDelta(await deltaResponse.json());
       lastUpdated.textContent = new Date().toLocaleTimeString();

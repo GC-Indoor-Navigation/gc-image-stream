@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from app.services.monitoring.debug import get_latest_timestamp_delta
 from app.services.monitoring.service import (
     get_camera_state,
+    get_grpc_ingest_status,
     get_relay_status,
     list_camera_states,
 )
@@ -139,6 +140,7 @@ MONITORING_VIEWER_HTML = """<!doctype html>
     .healthy { color: var(--good); border-color: #99f6e4; background: #f0fdfa; }
     .stale { color: var(--warn); border-color: #fed7aa; background: #fff7ed; }
     .disconnected { color: var(--bad); border-color: #fecaca; background: #fef2f2; }
+    .runtime-grid,
     .relay-grid {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -175,10 +177,12 @@ MONITORING_VIEWER_HTML = """<!doctype html>
     a:hover { text-decoration: underline; }
     @media (max-width: 1080px) {
       .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .runtime-grid,
       .relay-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 720px) {
       .summary-grid,
+      .runtime-grid,
       .relay-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       table, thead, tbody, th, td, tr { display: block; }
       thead { display: none; }
@@ -197,6 +201,13 @@ MONITORING_VIEWER_HTML = """<!doctype html>
   </header>
   <main>
     <section class="summary-grid" id="summaryGrid"></section>
+    <section class="panel">
+      <div class="panel-head">
+        <span>gRPC Ingest</span>
+        <span class="meta">Connection gate</span>
+      </div>
+      <div class="runtime-grid" id="ingestGrid"></div>
+    </section>
     <section class="panel">
       <div class="panel-head">
         <span>Relay</span>
@@ -230,6 +241,7 @@ MONITORING_VIEWER_HTML = """<!doctype html>
   </main>
   <script>
     const summaryGrid = document.getElementById("summaryGrid");
+    const ingestGrid = document.getElementById("ingestGrid");
     const relayGrid = document.getElementById("relayGrid");
     const cameraTable = document.getElementById("cameraTable");
     const lastUpdated = document.getElementById("lastUpdated");
@@ -290,6 +302,19 @@ MONITORING_VIEWER_HTML = """<!doctype html>
       ].join("");
     }
 
+    function renderIngest(ingest) {
+      const observed = (ingest.observed_device_ids || []).join(", ") || "-";
+      ingestGrid.innerHTML = [
+        relayCard("Enabled", ingest.enabled ? "true" : "false", ingest.enabled ? "healthy" : ""),
+        relayCard("Running", ingest.running ? "true" : "false", ingest.running ? "healthy" : "stale"),
+        relayCard("Bind", ingest.bind || "-"),
+        relayCard("Gate Enabled", ingest.gate_enabled ? "true" : "false", ingest.gate_enabled ? "healthy" : ""),
+        relayCard("Gate Open", ingest.gate_open ? "true" : "false", ingest.gate_open ? "healthy" : "stale"),
+        relayCard("Expected Devices", ingest.expected_device_count ?? "-"),
+        relayCard("Observed Devices", observed),
+      ].join("");
+    }
+
     function renderCameras(cameras) {
       if (cameras.length === 0) {
         cameraTable.innerHTML = '<tr><td colspan="8" class="meta">No camera state</td></tr>';
@@ -311,20 +336,24 @@ MONITORING_VIEWER_HTML = """<!doctype html>
 
     function applyPayload(payload) {
       const cameras = payload.cameras || [];
+      const ingest = payload.grpc_ingest || {};
       const relay = payload.relay || {};
       renderSummary(cameras, relay);
+      renderIngest(ingest);
       renderRelay(relay);
       renderCameras(cameras);
       lastUpdated.textContent = new Date().toLocaleTimeString();
     }
 
     async function loadFallback() {
-      const [cameraResponse, relayResponse] = await Promise.all([
+      const [cameraResponse, ingestResponse, relayResponse] = await Promise.all([
         fetch("/monitoring/cameras"),
+        fetch("/monitoring/grpc-ingest"),
         fetch("/monitoring/relay"),
       ]);
       applyPayload({
         cameras: (await cameraResponse.json()).items || [],
+        grpc_ingest: await ingestResponse.json(),
         relay: await relayResponse.json(),
       });
     }
@@ -361,9 +390,19 @@ def get_monitoring_viewer():
 def build_monitoring_snapshot():
     return {
         "cameras": list_camera_states(),
+        "grpc_ingest": get_grpc_ingest_status(),
         "relay": get_relay_status(),
         "timestamp_delta": get_latest_timestamp_delta(),
     }
+
+
+@router.get(
+    "/grpc-ingest",
+    summary="gRPC ingest status",
+    description="gRPC ingest listener and multi-device gate status.",
+)
+def get_grpc_ingest():
+    return get_grpc_ingest_status()
 
 
 @router.get(

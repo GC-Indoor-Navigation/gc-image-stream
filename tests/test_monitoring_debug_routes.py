@@ -1,3 +1,4 @@
+from app.infrastructure.grpc.grpc_ingest_server import grpc_ingest_service
 from app.infrastructure.grpc.processing_relay_client import processing_relay_service
 from app.services.ingest.ingest_pipeline import ingest_frame
 from app.services.stream.state import stream_state
@@ -133,6 +134,25 @@ def test_monitoring_relay_returns_relay_status(client):
     assert response.json()["target"] == "127.0.0.1:50051"
 
 
+def test_monitoring_grpc_ingest_returns_gate_status(client):
+    grpc_ingest_service.configure(
+        bind="0.0.0.0:50052",
+        enabled=True,
+        expected_device_count=3,
+    )
+
+    response = client.get("/monitoring/grpc-ingest")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["enabled"] is True
+    assert body["bind"] == "0.0.0.0:50052"
+    assert body["gate_enabled"] is True
+    assert body["gate_open"] is False
+    assert body["expected_device_count"] == 3
+    assert body["observed_device_ids"] == []
+
+
 def test_monitoring_events_returns_sse_snapshot(client, session_factory):
     db = session_factory()
     try:
@@ -151,6 +171,7 @@ def test_monitoring_events_returns_sse_snapshot(client, session_factory):
     assert response.status_code == 200
     assert "text/event-stream" in response.headers["content-type"]
     assert '"device_id":"camera1"' in response.text
+    assert '"grpc_ingest"' in response.text
     assert '"relay"' in response.text
     assert '"timestamp_delta"' in response.text
 
@@ -161,6 +182,7 @@ def test_monitoring_viewer_returns_html(client):
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     assert "GC Monitoring" in response.text
+    assert "gRPC Ingest" in response.text
     assert 'new EventSource("/monitoring/events")' in response.text
 
 
@@ -170,5 +192,6 @@ def test_debug_viewer_returns_html(client):
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     assert "GC Debug Viewer" in response.text
+    assert "gRPC Ingest" in response.text
     assert 'new EventSource("/monitoring/events")' in response.text
     assert "/debug/timestamp-delta" in response.text
