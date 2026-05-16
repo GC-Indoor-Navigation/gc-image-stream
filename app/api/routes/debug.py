@@ -61,10 +61,16 @@ DEBUG_VIEWER_HTML = """<!doctype html>
     button:hover { border-color: var(--accent); }
     main {
       display: grid;
-      grid-template-columns: 280px minmax(0, 1fr) 340px;
+      grid-template-columns: 320px minmax(0, 1fr) 340px;
       gap: 12px;
       padding: 12px;
       min-height: calc(100vh - 56px);
+    }
+    .left {
+      display: grid;
+      grid-template-rows: auto auto;
+      gap: 12px;
+      align-content: start;
     }
     section {
       background: var(--panel);
@@ -85,6 +91,9 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       display: grid;
       gap: 8px;
       padding: 10px;
+    }
+    .camera-section {
+      min-height: 290px;
     }
     .camera-row {
       width: 100%;
@@ -159,7 +168,7 @@ DEBUG_VIEWER_HTML = """<!doctype html>
     }
     .side {
       display: grid;
-      grid-template-rows: auto auto auto;
+      grid-template-rows: auto auto;
       gap: 12px;
       background: transparent;
       border: 0;
@@ -193,10 +202,16 @@ DEBUG_VIEWER_HTML = """<!doctype html>
     <button id="refreshButton" type="button">Refresh</button>
   </header>
   <main>
-    <section>
-      <div class="section-head">Cameras <span id="cameraCount" class="meta">0</span></div>
-      <div id="cameraList" class="camera-list"></div>
-    </section>
+    <div class="left">
+      <section class="camera-section">
+        <div class="section-head">Cameras <span id="cameraCount" class="meta">0</span></div>
+        <div id="cameraList" class="camera-list"></div>
+      </section>
+      <section>
+        <div class="section-head">gRPC Ingest</div>
+        <div id="ingestStatus" class="panel-body relay-grid"></div>
+      </section>
+    </div>
     <section class="viewer">
       <div class="section-head">
         <span id="selectedTitle">Latest Frame</span>
@@ -208,10 +223,6 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       <div id="details" class="detail-grid"></div>
     </section>
     <section class="side">
-      <section>
-        <div class="section-head">gRPC Ingest</div>
-        <div id="ingestStatus" class="panel-body relay-grid"></div>
-      </section>
       <section>
         <div class="section-head">Relay</div>
         <div id="relayStatus" class="panel-body relay-grid"></div>
