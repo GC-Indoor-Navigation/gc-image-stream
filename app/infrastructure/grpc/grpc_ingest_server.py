@@ -2,6 +2,7 @@ import json
 import time
 from concurrent import futures
 from pathlib import Path
+from threading import Lock
 from typing import Callable, Iterable
 
 from google.protobuf.json_format import MessageToDict
@@ -90,14 +91,28 @@ class GrpcIngestService:
         self.enabled = False
         self.runtime_server = None
         self.runtime_bind = ""
+        self.expected_device_count: int | None = None
+        self.gate_open = True
+        self.observed_device_ids: set[str] = set()
+        self.gate_lock = Lock()
         self.db_factory = db_factory
         self.ingest_func = ingest_func
         self.state = state
         self.relay_service = relay_service
 
-    def configure(self, bind: str, enabled: bool = True):
+    def configure(
+        self,
+        bind: str,
+        enabled: bool = True,
+        expected_device_count: int | None = None,
+    ):
         self.bind = bind
         self.enabled = enabled
+        self.expected_device_count = (
+            expected_device_count if expected_device_count and expected_device_count > 1 else None
+        )
+        self.gate_open = self.expected_device_count is None
+        self.observed_device_ids = set()
 
     def start(self):
         if not self.enabled:
@@ -137,7 +152,22 @@ class GrpcIngestService:
             "enabled": self.enabled,
             "bind": self.runtime_bind or self.bind,
             "running": self.runtime_server is not None,
+            "gate_enabled": self.expected_device_count is not None,
+            "gate_open": self.gate_open,
+            "expected_device_count": self.expected_device_count,
+            "observed_device_ids": sorted(self.observed_device_ids),
         }
+
+    def _allow_ingest(self, device_id: str) -> bool:
+        with self.gate_lock:
+            if self.gate_open:
+                self.observed_device_ids.add(device_id)
+                return True
+
+            self.observed_device_ids.add(device_id)
+            if len(self.observed_device_ids) >= (self.expected_device_count or 0):
+                self.gate_open = True
+            return False
 
     def _stream_frames(
         self,
@@ -167,6 +197,8 @@ class GrpcIngestService:
             experiment_recorder = get_stream_experiment_recorder()
             if experiment_recorder is not None:
                 experiment_recorder.observe_device(internal_device_id)
+            if not self._allow_ingest(internal_device_id):
+                continue
 
             db = self.db_factory()
             try:

@@ -50,7 +50,7 @@ async def startup_application():
         experiment_log_dir=EXPERIMENT_LOG_DIR,
         experiment_id=EXPERIMENT_ID,
         duration_sec=EXPERIMENT_DURATION_SEC,
-        expected_device_count=len(grpc_camera_configs) if grpc_ingest_enabled else None,
+        expected_device_count=len(grpc_camera_configs) if len(grpc_camera_configs) > 1 else None,
         storage_dir=STORAGE_DIR,
         relay_target=STREAM_RELAY_TARGET if STREAM_RELAY_ENABLED else "",
         camera_ids=[config.device_id for config in camera_configs],
@@ -81,6 +81,7 @@ async def startup_application():
         grpc_ingest_service.configure(
             bind=GRPC_INGEST_BIND,
             enabled=True,
+            expected_device_count=len(grpc_camera_configs),
         )
         grpc_ingest_service.start()
         logger.info(
