@@ -178,6 +178,7 @@ def test_grpc_ingest_service_streams_android_collector_packets_into_ingest_path(
                     exposure_time_ns_requested=4_000_000,
                     exposure_time_ns_applied=3_800_000,
                     focal_length_mm=5.43,
+                    session_id="android_01_2026-05-17T14-32-10",
                     resolution_support="1280x720",
                 ),
                 jpeg=b"\xff\xd8android-frame\xff\xd9",
@@ -200,6 +201,7 @@ def test_grpc_ingest_service_streams_android_collector_packets_into_ingest_path(
         stored_frame = stored_frames[0]
         assert stored_frame.device_id == "android_a14_001"
         assert stored_frame.timestamp == 55_000
+        assert "android_01_2026-05-17T14-32-10" in stored_frame.file_path
         assert Path(stored_frame.file_path).name.endswith(
             "android_a14_001_rear_main_9.jpg"
         )
@@ -223,6 +225,7 @@ def test_grpc_ingest_service_streams_android_collector_packets_into_ingest_path(
         assert sidecar_payload["metadata"]["exposure_time_ns_requested"] == "4000000"
         assert sidecar_payload["metadata"]["exposure_time_ns_applied"] == "3800000"
         assert sidecar_payload["metadata"]["focal_length_mm"] == pytest.approx(5.43)
+        assert sidecar_payload["metadata"]["session_id"] == "android_01_2026-05-17T14-32-10"
         assert sidecar_payload["metadata"]["resolution_support"] == "1280x720"
     finally:
         service.stop()
@@ -324,6 +327,7 @@ def test_collector_packets_prefer_device_id_and_fall_back_to_camera_id(session_f
                         frame_sequence=1,
                         device_timestamp_ms=1_000,
                         format="jpeg",
+                        session_id="android_01_2026-05-17T14-32-10",
                     ),
                     jpeg=b"frame-1",
                 ),
@@ -356,6 +360,10 @@ def test_collector_packets_prefer_device_id_and_fall_back_to_camera_id(session_f
     assert [call["filename"] for call in captured_calls] == [
         "android_a14_001_rear_main_1.jpg",
         "rear_ultra_wide_rear_ultra_wide_2.jpg",
+    ]
+    assert [call["session_id"] for call in captured_calls] == [
+        "android_01_2026-05-17T14-32-10",
+        None,
     ]
 
 

@@ -22,12 +22,18 @@ def ingest_frame(
     sequence: int | None = None,
     content_type: str = "image/jpeg",
     filename: str | None = None,
+    session_id: str | None = None,
     state: StreamState = stream_state,
     relay_service: ProcessingRelayService = processing_relay_service,
 ):
     started_at = time.monotonic()
     target_filename = filename or f"{device_id}_{timestamp_ms}.jpg"
-    save_path = build_frame_path(device_id, timestamp_ms, target_filename)
+    save_path = build_frame_path(
+        device_id,
+        timestamp_ms,
+        target_filename,
+        session_id=session_id,
+    )
     Path(save_path).write_bytes(image_bytes)
 
     frame = create_frame(

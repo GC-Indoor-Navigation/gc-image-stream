@@ -193,6 +193,7 @@ class GrpcIngestService:
             content_type = resolve_content_type(metadata.format or "jpeg")
             camera_id = metadata.camera_id or "unknown"
             filename = f"{internal_device_id}_{camera_id}_{metadata.frame_sequence}.jpg"
+            session_id = metadata.session_id if metadata.HasField("session_id") else None
             received_at = time.monotonic()
             experiment_recorder = get_stream_experiment_recorder()
             if experiment_recorder is not None:
@@ -210,6 +211,7 @@ class GrpcIngestService:
                     sequence=metadata.frame_sequence or None,
                     content_type=content_type,
                     filename=filename,
+                    session_id=session_id,
                     state=self.state,
                     relay_service=self.relay_service,
                 )
