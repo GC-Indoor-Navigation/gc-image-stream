@@ -50,6 +50,7 @@ message FrameMetadata {
   int64 exposure_time_ns_requested = 33;
   optional int64 exposure_time_ns_applied = 34;
   optional float focal_length_mm = 35;
+  optional string session_id = 36;
 }
 
 message StreamFramesResponse {

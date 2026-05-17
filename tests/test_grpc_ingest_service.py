@@ -54,6 +54,7 @@ def test_frame_packet_round_trip_preserves_metadata_and_bytes():
             exposure_time_ns_requested=4_000_000,
             exposure_time_ns_applied=3_800_000,
             focal_length_mm=5.43,
+            session_id="android_01_2026-05-17T14-32-10",
         ),
         jpeg=b"\xff\xd8frame\xff\xd9",
     )
@@ -81,6 +82,7 @@ def test_collector_proto_field_numbers_match_android_contract():
     assert metadata_fields["iso_applied"].number == 32
     assert metadata_fields["exposure_time_ns_applied"].number == 34
     assert metadata_fields["focal_length_mm"].number == 35
+    assert metadata_fields["session_id"].number == 36
 
 
 def test_frame_packet_parse_from_string_preserves_metadata_and_bytes():
@@ -115,6 +117,7 @@ def test_frame_packet_parse_from_string_preserves_metadata_and_bytes():
             exposure_time_ns_requested=4_000_000,
             exposure_time_ns_applied=3_800_000,
             focal_length_mm=5.43,
+            session_id="android_01_2026-05-17T14-32-10",
             resolution_support="1280x720",
         ),
         jpeg=b"\xff\xd8android\xff\xd9",
