@@ -36,8 +36,10 @@ MJPEG worker or gRPC ingest
 
 - internal MJPEG camera session worker
 - direct gRPC ingest from app clients
+- single-shot HTTP calibration upload
 
-Both paths converge on the same ingest pipeline.
+MJPEG and gRPC inputs converge on the same ingest pipeline.
+Calibration upload is stored locally as a separate single-shot capture path.
 
 The Stream Server gRPC ingest contract is:
 
@@ -97,6 +99,7 @@ CAMERA1_CAPTURE_TIMEOUT_SEC=10
 - Monitoring Viewer: `/monitoring/viewer`
 - Debug Viewer: `/debug/viewer`
 - Relay status: `/monitoring/relay`
+- Internal calibration upload: `POST /capture/internal-calibration`
 
 ## Docs
 
