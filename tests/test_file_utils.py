@@ -70,3 +70,18 @@ def test_build_frame_path_keeps_session_directory_when_prefix_does_not_match(mon
     assert Path(path).parent == expected_dir
     assert Path(path).name == "1712321562400_android_01_camera_01_15.jpg"
     assert expected_dir.is_dir()
+
+
+def test_build_calibration_frame_path_uses_calibration_directory(monkeypatch, tmp_path):
+    monkeypatch.setattr(file_utils, "STORAGE_DIR", str(tmp_path))
+
+    path = file_utils.build_calibration_frame_path(
+        device_id="android_01",
+        timestamp=1712321562400,
+        filename="android_01_camera_01_15.jpg",
+    )
+
+    expected_dir = tmp_path / "android_01" / "calibration"
+    assert Path(path).parent == expected_dir
+    assert Path(path).name == "1712321562400_android_01_camera_01_15.jpg"
+    assert expected_dir.is_dir()

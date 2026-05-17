@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.api.routes.capture import router as capture_router
 from app.db import Base, get_db
 from app.api.routes.debug import router as debug_router
 from app.api.routes.frames import router as frames_router
@@ -45,6 +46,7 @@ def app(session_factory, storage_dir):
     processing_relay_service.clear()
     clear_stream_experiment_recorder()
     test_app = FastAPI()
+    test_app.include_router(capture_router)
     test_app.include_router(frames_router)
     test_app.include_router(monitoring_router)
     test_app.include_router(debug_router)
