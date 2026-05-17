@@ -45,7 +45,30 @@ def test_build_frame_path_includes_session_directory_when_present(monkeypatch, t
     expected_dir = (
         tmp_path
         / "android_01"
-        / "android_01_2026-05-17T14-32-10"
+        / "2026-05-17T14-32-10"
+        / "2024"
+        / "04"
+        / "05"
+    )
+    assert Path(path).parent == expected_dir
+    assert Path(path).name == "1712321562400_android_01_camera_01_15.jpg"
+    assert expected_dir.is_dir()
+
+
+def test_build_frame_path_keeps_session_directory_when_prefix_does_not_match(monkeypatch, tmp_path):
+    monkeypatch.setattr(file_utils, "STORAGE_DIR", str(tmp_path))
+
+    path = file_utils.build_frame_path(
+        device_id="android_01",
+        timestamp=1712321562400,
+        filename="android_01_camera_01_15.jpg",
+        session_id="capture_run_001",
+    )
+
+    expected_dir = (
+        tmp_path
+        / "android_01"
+        / "capture_run_001"
         / "2024"
         / "04"
         / "05"
