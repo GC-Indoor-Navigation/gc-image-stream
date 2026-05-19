@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from app.services.monitoring.debug import get_latest_timestamp_delta
 from app.services.monitoring.service import (
     get_camera_state,
+    get_frame_set_relay_status,
     get_grpc_ingest_status,
     get_relay_status,
     get_sync_status,
@@ -423,6 +424,7 @@ def build_monitoring_snapshot():
         "cameras": list_camera_states(),
         "grpc_ingest": get_grpc_ingest_status(),
         "relay": get_relay_status(),
+        "frame_set_relay": get_frame_set_relay_status(),
         "sync": get_sync_status(),
         "timestamp_delta": get_latest_timestamp_delta(),
     }
@@ -491,6 +493,15 @@ def get_camera(device_id: str):
 )
 def get_relay():
     return get_relay_status()
+
+
+@router.get(
+    "/frame-set-relay",
+    summary="Frame-set relay status",
+    description="Stream Server synchronized frame-set relay worker status.",
+)
+def get_frame_set_relay():
+    return get_frame_set_relay_status()
 
 
 @router.get(

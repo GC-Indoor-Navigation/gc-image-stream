@@ -5,7 +5,9 @@ from sqlalchemy.orm import Session
 
 from app.infrastructure.grpc.generated.processing_relay_pb2 import RelayFrame
 from app.infrastructure.grpc.processing_relay_client import (
+    ProcessingFrameSetRelayService,
     ProcessingRelayService,
+    processing_frame_set_relay_service,
     processing_relay_service,
 )
 from app.infrastructure.storage.file_utils import build_frame_path
@@ -27,6 +29,7 @@ def ingest_frame(
     state: StreamState = stream_state,
     relay_service: ProcessingRelayService = processing_relay_service,
     sync_service: StreamSyncService = stream_sync_service,
+    frame_set_relay_service: ProcessingFrameSetRelayService = processing_frame_set_relay_service,
 ):
     started_at = time.monotonic()
     target_filename = filename or f"{device_id}_{timestamp_ms}.jpg"
@@ -75,6 +78,11 @@ def ingest_frame(
             file_path=frame.file_path,
         )
     )
+    frame_set_relay_enqueued = (
+        frame_set_relay_service.enqueue_synchronized_frame_set(synchronized_frame_set)
+        if synchronized_frame_set is not None
+        else False
+    )
     experiment_recorder = get_stream_experiment_recorder()
     if experiment_recorder is not None:
         experiment_recorder.record_registration(
@@ -90,4 +98,5 @@ def ingest_frame(
         "camera_state": camera_state,
         "relay_enqueued": relay_enqueued,
         "synchronized_frame_set": synchronized_frame_set,
+        "frame_set_relay_enqueued": frame_set_relay_enqueued,
     }

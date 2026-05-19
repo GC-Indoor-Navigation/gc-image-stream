@@ -1,7 +1,10 @@
 from app.infrastructure.grpc.grpc_ingest_server import grpc_ingest_service
 from pathlib import Path
 
-from app.infrastructure.grpc.processing_relay_client import processing_relay_service
+from app.infrastructure.grpc.processing_relay_client import (
+    processing_frame_set_relay_service,
+    processing_relay_service,
+)
 from app.models import Frame
 from app.services.stream.state import (
     CameraStreamState,
@@ -106,6 +109,10 @@ def latest_frame_file_exists(db, device_id: str, state: StreamState = stream_sta
 
 def get_relay_status():
     return processing_relay_service.status()
+
+
+def get_frame_set_relay_status():
+    return processing_frame_set_relay_service.status()
 
 
 def get_grpc_ingest_status():

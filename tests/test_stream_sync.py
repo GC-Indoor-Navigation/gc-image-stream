@@ -1,3 +1,4 @@
+from app.infrastructure.grpc.processing_relay_client import ProcessingFrameSetRelayService
 from app.services.ingest.ingest_pipeline import ingest_frame
 from app.services.stream.state import StreamState
 from app.services.sync import (
@@ -137,6 +138,51 @@ def test_ingest_frame_runs_stream_sync_without_changing_raw_relay(
     assert second["synchronized_frame_set"] is not None
     assert set(second["synchronized_frame_set"].frames) == {"camera1", "camera2"}
     assert sync_service.status()["matched_count"] == 1
+
+
+def test_ingest_frame_enqueues_frame_set_relay_when_sync_matches(
+    session_factory,
+    storage_dir,
+):
+    db = session_factory()
+    state = StreamState()
+    sync_service = StreamSyncService()
+    sync_service.configure(
+        enabled=True,
+        expected_cameras=["camera1", "camera2"],
+        window_ms=30,
+    )
+    frame_set_relay_service = ProcessingFrameSetRelayService()
+    frame_set_relay_service.configure(target="127.0.0.1:50051", enabled=True)
+    try:
+        first = ingest_frame(
+            db,
+            device_id="camera1",
+            timestamp_ms=1000,
+            sequence=1,
+            image_bytes=b"frame-1",
+            state=state,
+            sync_service=sync_service,
+            frame_set_relay_service=frame_set_relay_service,
+        )
+        second = ingest_frame(
+            db,
+            device_id="camera2",
+            timestamp_ms=1010,
+            sequence=1,
+            image_bytes=b"frame-2",
+            state=state,
+            sync_service=sync_service,
+            frame_set_relay_service=frame_set_relay_service,
+        )
+    finally:
+        db.close()
+
+    assert first["frame_set_relay_enqueued"] is False
+    assert second["frame_set_relay_enqueued"] is True
+    status = frame_set_relay_service.status()
+    assert status["queue_size"] == 1
+    assert status["last_frame_set_id"] == 1
 
 
 def test_monitoring_sync_returns_stream_sync_status(client):

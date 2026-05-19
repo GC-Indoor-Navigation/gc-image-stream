@@ -19,6 +19,24 @@ STREAM_RELAY_TIMEOUT_SEC = (
     if _stream_relay_timeout_sec > 0
     else None
 )
+STREAM_FRAME_SET_RELAY_ENABLED = get_optional_bool_env(
+    "STREAM_FRAME_SET_RELAY_ENABLED",
+    False,
+)
+STREAM_FRAME_SET_RELAY_TARGET = (
+    get_required_env("STREAM_FRAME_SET_RELAY_TARGET")
+    if STREAM_FRAME_SET_RELAY_ENABLED
+    else ""
+)
+_stream_frame_set_relay_timeout_sec = get_optional_float_env(
+    "STREAM_FRAME_SET_RELAY_TIMEOUT_SEC",
+    0.0,
+)
+STREAM_FRAME_SET_RELAY_TIMEOUT_SEC = (
+    _stream_frame_set_relay_timeout_sec
+    if _stream_frame_set_relay_timeout_sec > 0
+    else None
+)
 STREAM_SYNC_ENABLED = get_optional_bool_env("STREAM_SYNC_ENABLED", False)
 STREAM_SYNC_WINDOW_MS = get_optional_int_env("STREAM_SYNC_WINDOW_MS", 50)
 STREAM_SYNC_EXPECTED_CAMERAS = get_optional_csv_env("STREAM_SYNC_EXPECTED_CAMERAS")

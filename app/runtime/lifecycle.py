@@ -11,6 +11,9 @@ from app.core.server import (
     EXPERIMENT_LOG_DIR,
     GRPC_INGEST_BIND,
     STORAGE_DIR,
+    STREAM_FRAME_SET_RELAY_ENABLED,
+    STREAM_FRAME_SET_RELAY_TARGET,
+    STREAM_FRAME_SET_RELAY_TIMEOUT_SEC,
     STREAM_RELAY_ENABLED,
     STREAM_RELAY_TARGET,
     STREAM_RELAY_TIMEOUT_SEC,
@@ -21,7 +24,10 @@ from app.core.server import (
     STREAM_SYNC_WINDOW_MS,
 )
 from app.infrastructure.grpc.grpc_ingest_server import grpc_ingest_service
-from app.infrastructure.grpc.processing_relay_client import processing_relay_service
+from app.infrastructure.grpc.processing_relay_client import (
+    processing_frame_set_relay_service,
+    processing_relay_service,
+)
 from app.services.ingest.camera_session_manager import camera_session_manager
 from app.services.stream.stream_experiment import (
     clear_stream_experiment_recorder,
@@ -83,6 +89,27 @@ async def startup_application():
         )
         logger.info(format_log_event("stream_relay_disabled"))
 
+    if STREAM_FRAME_SET_RELAY_ENABLED:
+        processing_frame_set_relay_service.configure(
+            target=STREAM_FRAME_SET_RELAY_TARGET,
+            timeout_sec=STREAM_FRAME_SET_RELAY_TIMEOUT_SEC,
+            enabled=True,
+        )
+        processing_frame_set_relay_service.start()
+        logger.info(
+            format_log_event(
+                "stream_frame_set_relay_started",
+                target=STREAM_FRAME_SET_RELAY_TARGET,
+            )
+        )
+    else:
+        processing_frame_set_relay_service.configure(
+            target="",
+            timeout_sec=STREAM_FRAME_SET_RELAY_TIMEOUT_SEC,
+            enabled=False,
+        )
+        logger.info(format_log_event("stream_frame_set_relay_disabled"))
+
     stream_sync_service.configure(
         enabled=STREAM_SYNC_ENABLED,
         expected_cameras=STREAM_SYNC_EXPECTED_CAMERAS,
@@ -132,6 +159,7 @@ async def shutdown_application():
     camera_session_manager.stop_all()
     grpc_ingest_service.stop()
     processing_relay_service.stop()
+    processing_frame_set_relay_service.stop()
     stream_sync_service.clear()
     clear_stream_experiment_recorder()
     logger.info(format_log_event("camera_sessions_stopped"))
