@@ -39,6 +39,11 @@ class FrameRelayServiceStub(object):
                 request_serializer=processing__relay__pb2.RelayFrame.SerializeToString,
                 response_deserializer=processing__relay__pb2.RelayAck.FromString,
                 _registered_method=True)
+        self.StreamFrameSets = channel.stream_unary(
+                '/gc_image_stream.processing.v1.FrameRelayService/StreamFrameSets',
+                request_serializer=processing__relay__pb2.RelayFrameSet.SerializeToString,
+                response_deserializer=processing__relay__pb2.RelayAck.FromString,
+                _registered_method=True)
 
 
 class FrameRelayServiceServicer(object):
@@ -50,12 +55,23 @@ class FrameRelayServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def StreamFrameSets(self, request_iterator, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_FrameRelayServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'StreamFrames': grpc.stream_unary_rpc_method_handler(
                     servicer.StreamFrames,
                     request_deserializer=processing__relay__pb2.RelayFrame.FromString,
+                    response_serializer=processing__relay__pb2.RelayAck.SerializeToString,
+            ),
+            'StreamFrameSets': grpc.stream_unary_rpc_method_handler(
+                    servicer.StreamFrameSets,
+                    request_deserializer=processing__relay__pb2.RelayFrameSet.FromString,
                     response_serializer=processing__relay__pb2.RelayAck.SerializeToString,
             ),
     }
@@ -85,6 +101,33 @@ class FrameRelayService(object):
             target,
             '/gc_image_stream.processing.v1.FrameRelayService/StreamFrames',
             processing__relay__pb2.RelayFrame.SerializeToString,
+            processing__relay__pb2.RelayAck.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def StreamFrameSets(request_iterator,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.stream_unary(
+            request_iterator,
+            target,
+            '/gc_image_stream.processing.v1.FrameRelayService/StreamFrameSets',
+            processing__relay__pb2.RelayFrameSet.SerializeToString,
             processing__relay__pb2.RelayAck.FromString,
             options,
             channel_credentials,

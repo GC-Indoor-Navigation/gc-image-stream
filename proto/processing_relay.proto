@@ -4,6 +4,7 @@ package gc_image_stream.processing.v1;
 
 service FrameRelayService {
   rpc StreamFrames(stream RelayFrame) returns (RelayAck);
+  rpc StreamFrameSets(stream RelayFrameSet) returns (RelayAck);
 }
 
 message RelayFrame {
@@ -19,4 +20,21 @@ message RelayAck {
   bool success = 1;
   uint64 received_count = 2;
   string message = 3;
+}
+
+message RelayFrameSet {
+  uint64 frame_set_id = 1;
+  int64 anchor_timestamp_ms = 2;
+  int64 max_delta_ms = 3;
+  repeated RelayFrameSetFrame frames = 4;
+}
+
+message RelayFrameSetFrame {
+  string device_id = 1;
+  int64 timestamp_ms = 2;
+  uint64 sequence = 3;
+  string content_type = 4;
+  bytes image_bytes = 5;
+  optional string file_path = 6;
+  optional uint64 frame_id = 7;
 }

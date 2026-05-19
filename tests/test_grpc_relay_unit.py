@@ -9,6 +9,8 @@ from app.infrastructure.grpc.generated import (
 
 RelayAck = processing_relay_pb2.RelayAck
 RelayFrame = processing_relay_pb2.RelayFrame
+RelayFrameSet = processing_relay_pb2.RelayFrameSet
+RelayFrameSetFrame = processing_relay_pb2.RelayFrameSetFrame
 
 
 def test_relay_frame_round_trip_preserves_metadata_and_bytes():
@@ -34,6 +36,42 @@ def test_relay_ack_round_trip_preserves_fields():
     restored.ParseFromString(ack.SerializeToString())
 
     assert restored == ack
+
+
+def test_relay_frame_set_round_trip_preserves_matched_frames():
+    frame_set = RelayFrameSet(
+        frame_set_id=42,
+        anchor_timestamp_ms=1_010,
+        max_delta_ms=10,
+        frames=[
+            RelayFrameSetFrame(
+                device_id="camera1",
+                timestamp_ms=1_000,
+                sequence=1,
+                content_type="image/jpeg",
+                image_bytes=b"frame-1",
+                file_path="storage/camera1/1.jpg",
+                frame_id=101,
+            ),
+            RelayFrameSetFrame(
+                device_id="camera2",
+                timestamp_ms=1_010,
+                sequence=1,
+                content_type="image/jpeg",
+                image_bytes=b"frame-2",
+                file_path="storage/camera2/1.jpg",
+                frame_id=102,
+            ),
+        ],
+    )
+
+    restored = RelayFrameSet()
+    restored.ParseFromString(frame_set.SerializeToString())
+
+    assert restored == frame_set
+    assert restored.frame_set_id == 42
+    assert [frame.device_id for frame in restored.frames] == ["camera1", "camera2"]
+    assert restored.frames[0].HasField("frame_id") is True
 
 
 def test_grpc_relay_stream_round_trip():
@@ -82,5 +120,63 @@ def test_grpc_relay_stream_round_trip():
         assert ack.success is True
         assert ack.received_count == 2
         assert received_frames == frames
+    finally:
+        server.stop(0)
+
+
+def test_grpc_frame_set_relay_stream_round_trip():
+    grpc = pytest.importorskip("grpc")
+
+    received_frame_sets = []
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=1))
+
+    class Servicer(processing_relay_pb2_grpc.FrameRelayServiceServicer):
+        def StreamFrames(self, request_iterator, context):
+            return RelayAck(success=True, received_count=0, message="unused")
+
+        def StreamFrameSets(self, request_iterator, context):
+            received_count = 0
+            for frame_set in request_iterator:
+                received_count += 1
+                received_frame_sets.append(frame_set)
+            return RelayAck(success=True, received_count=received_count, message="ok")
+
+    processing_relay_pb2_grpc.add_FrameRelayServiceServicer_to_server(Servicer(), server)
+    port = server.add_insecure_port("127.0.0.1:0")
+    server.start()
+
+    try:
+        channel = grpc.insecure_channel(f"127.0.0.1:{port}")
+        stub = processing_relay_pb2_grpc.FrameRelayServiceStub(channel).StreamFrameSets
+
+        frame_sets = [
+            RelayFrameSet(
+                frame_set_id=1,
+                anchor_timestamp_ms=1_010,
+                max_delta_ms=10,
+                frames=[
+                    RelayFrameSetFrame(
+                        device_id="camera1",
+                        timestamp_ms=1_000,
+                        sequence=1,
+                        content_type="image/jpeg",
+                        image_bytes=b"frame-1",
+                    ),
+                    RelayFrameSetFrame(
+                        device_id="camera2",
+                        timestamp_ms=1_010,
+                        sequence=1,
+                        content_type="image/jpeg",
+                        image_bytes=b"frame-2",
+                    ),
+                ],
+            )
+        ]
+
+        ack = stub(iter(frame_sets), timeout=5.0)
+
+        assert ack.success is True
+        assert ack.received_count == 1
+        assert received_frame_sets == frame_sets
     finally:
         server.stop(0)
