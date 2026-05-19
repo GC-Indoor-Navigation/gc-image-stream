@@ -10,6 +10,7 @@ from app.services.monitoring.service import (
     get_grpc_ingest_status,
     get_relay_status,
     get_sync_status,
+    list_recent_sync_frame_sets,
     list_camera_states,
 )
 
@@ -470,3 +471,14 @@ def get_relay():
 )
 def get_sync():
     return get_sync_status()
+
+
+@router.get(
+    "/sync/recent-frame-sets",
+    summary="Recent stream sync frame sets",
+    description="Recently matched synchronized frame sets from the Stream Server sync matcher.",
+)
+def get_recent_sync_frame_sets():
+    return {
+        "items": list_recent_sync_frame_sets(),
+    }

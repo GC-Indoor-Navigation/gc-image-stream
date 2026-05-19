@@ -5,6 +5,7 @@ from app.services.sync import (
     SyncFrameBufferManager,
     SyncInputFrame,
     SyncMatcher,
+    stream_sync_service,
 )
 
 
@@ -146,3 +147,45 @@ def test_monitoring_sync_returns_stream_sync_status(client):
     assert body["enabled"] is False
     assert body["matched_count"] == 0
     assert body["buffer"]["camera_count"] == 0
+
+
+def test_monitoring_recent_sync_frame_sets_returns_matched_sets(
+    client,
+    session_factory,
+):
+    stream_sync_service.configure(
+        enabled=True,
+        expected_cameras=["camera1", "camera2"],
+        window_ms=30,
+    )
+    db = session_factory()
+    try:
+        ingest_frame(
+            db,
+            device_id="camera1",
+            timestamp_ms=1000,
+            sequence=1,
+            image_bytes=b"frame-1",
+        )
+        ingest_frame(
+            db,
+            device_id="camera2",
+            timestamp_ms=1010,
+            sequence=1,
+            image_bytes=b"frame-2",
+        )
+    finally:
+        db.close()
+
+    response = client.get("/monitoring/sync/recent-frame-sets")
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert len(items) == 1
+    frame_set = items[0]
+    assert frame_set["frame_set_id"] == 1
+    assert frame_set["anchor_timestamp_ms"] == 1010
+    assert frame_set["max_delta_ms"] == 10
+    assert set(frame_set["frames"]) == {"camera1", "camera2"}
+    assert frame_set["frames"]["camera1"]["timestamp_ms"] == 1000
+    assert frame_set["frames"]["camera1"]["image_size"] == len(b"frame-1")

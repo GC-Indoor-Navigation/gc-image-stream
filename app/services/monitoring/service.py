@@ -9,7 +9,7 @@ from app.services.stream.state import (
     current_time_ms,
     stream_state,
 )
-from app.services.sync import stream_sync_service
+from app.services.sync import SynchronizedFrameSet, stream_sync_service
 
 
 STALE_THRESHOLD_MS = 3_000
@@ -114,3 +114,30 @@ def get_grpc_ingest_status():
 
 def get_sync_status():
     return stream_sync_service.status()
+
+
+def serialize_sync_frame_set(frame_set: SynchronizedFrameSet) -> dict:
+    return {
+        "frame_set_id": frame_set.frame_set_id,
+        "anchor_timestamp_ms": frame_set.anchor_timestamp_ms,
+        "max_delta_ms": frame_set.max_delta_ms,
+        "frames": {
+            device_id: {
+                "frame_id": frame.frame_id,
+                "device_id": frame.device_id,
+                "timestamp_ms": frame.timestamp_ms,
+                "sequence": frame.sequence,
+                "content_type": frame.content_type,
+                "image_size": frame.image_size,
+                "file_path": frame.file_path,
+            }
+            for device_id, frame in frame_set.frames.items()
+        },
+    }
+
+
+def list_recent_sync_frame_sets():
+    return [
+        serialize_sync_frame_set(frame_set)
+        for frame_set in stream_sync_service.recent_frame_sets()
+    ]
