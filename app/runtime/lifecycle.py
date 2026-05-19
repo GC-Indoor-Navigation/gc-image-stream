@@ -23,6 +23,7 @@ from app.core.server import (
     STREAM_SYNC_RECENT_LIMIT,
     STREAM_SYNC_WINDOW_MS,
 )
+from app.services.ingest.adapters.adapter_runtime import CameraInputConfig
 from app.infrastructure.grpc.grpc_ingest_server import grpc_ingest_service
 from app.infrastructure.grpc.processing_relay_client import (
     processing_frame_set_relay_service,
@@ -37,6 +38,15 @@ from app.services.sync import stream_sync_service
 
 
 logger = logging.getLogger("gc_image_stream.app")
+
+
+def resolve_sync_expected_cameras(
+    configured_expected_cameras: list[str] | tuple[str, ...],
+    grpc_camera_configs: list[CameraInputConfig],
+) -> list[str]:
+    if configured_expected_cameras:
+        return list(configured_expected_cameras)
+    return [config.device_id for config in grpc_camera_configs]
 
 
 async def startup_application():
@@ -110,9 +120,13 @@ async def startup_application():
         )
         logger.info(format_log_event("stream_frame_set_relay_disabled"))
 
+    sync_expected_cameras = resolve_sync_expected_cameras(
+        STREAM_SYNC_EXPECTED_CAMERAS,
+        grpc_camera_configs,
+    )
     stream_sync_service.configure(
         enabled=STREAM_SYNC_ENABLED,
-        expected_cameras=STREAM_SYNC_EXPECTED_CAMERAS,
+        expected_cameras=sync_expected_cameras,
         window_ms=STREAM_SYNC_WINDOW_MS,
         buffer_size=STREAM_SYNC_BUFFER_SIZE,
         recent_limit=STREAM_SYNC_RECENT_LIMIT,
@@ -121,7 +135,7 @@ async def startup_application():
         format_log_event(
             "stream_sync_configured",
             enabled=STREAM_SYNC_ENABLED,
-            expected_cameras=",".join(STREAM_SYNC_EXPECTED_CAMERAS),
+            expected_cameras=",".join(sync_expected_cameras),
             window_ms=STREAM_SYNC_WINDOW_MS,
         )
     )

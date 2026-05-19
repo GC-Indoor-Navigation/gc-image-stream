@@ -6,6 +6,8 @@ from app.core.cameras import build_camera_session_configs_from_env
 def test_build_camera_session_configs_from_env(monkeypatch):
     monkeypatch.setenv("CAMERA_SESSIONS", "camera1,camera2")
     monkeypatch.delenv("CAMERA_INPUT_TYPE", raising=False)
+    monkeypatch.delenv("CAMERA1_INPUT_TYPE", raising=False)
+    monkeypatch.delenv("CAMERA2_INPUT_TYPE", raising=False)
     monkeypatch.setenv("CAMERA1_STREAM_URL", "http://camera1.local/video")
     monkeypatch.setenv("CAMERA1_COLLECT_INTERVAL_SEC", "0.1")
     monkeypatch.setenv("CAMERA1_CAPTURE_TIMEOUT_SEC", "8")
@@ -26,6 +28,7 @@ def test_build_camera_session_configs_from_env(monkeypatch):
 def test_build_camera_session_configs_requires_stream_url(monkeypatch):
     monkeypatch.setenv("CAMERA_SESSIONS", "camera1")
     monkeypatch.delenv("CAMERA_INPUT_TYPE", raising=False)
+    monkeypatch.delenv("CAMERA1_INPUT_TYPE", raising=False)
     monkeypatch.delenv("CAMERA1_STREAM_URL", raising=False)
 
     with pytest.raises(RuntimeError, match="CAMERA1_STREAM_URL"):
@@ -49,6 +52,7 @@ def test_build_camera_session_configs_supports_snapshot_input(monkeypatch):
 def test_build_camera_session_configs_uses_global_input_type(monkeypatch):
     monkeypatch.setenv("CAMERA_SESSIONS", "camera1")
     monkeypatch.setenv("CAMERA_INPUT_TYPE", "snapshot")
+    monkeypatch.delenv("CAMERA1_INPUT_TYPE", raising=False)
     monkeypatch.setenv("CAMERA1_SNAPSHOT_URL", "http://camera1.local/shot.jpg")
 
     configs = build_camera_session_configs_from_env()
