@@ -1,6 +1,8 @@
 from app.core.env import (
     get_optional_bool_env,
+    get_optional_csv_env,
     get_optional_float_env,
+    get_optional_int_env,
     get_optional_str_env,
     get_required_env,
 )
@@ -17,6 +19,11 @@ STREAM_RELAY_TIMEOUT_SEC = (
     if _stream_relay_timeout_sec > 0
     else None
 )
+STREAM_SYNC_ENABLED = get_optional_bool_env("STREAM_SYNC_ENABLED", False)
+STREAM_SYNC_WINDOW_MS = get_optional_int_env("STREAM_SYNC_WINDOW_MS", 50)
+STREAM_SYNC_EXPECTED_CAMERAS = get_optional_csv_env("STREAM_SYNC_EXPECTED_CAMERAS")
+STREAM_SYNC_BUFFER_SIZE = get_optional_int_env("STREAM_SYNC_BUFFER_SIZE", 120)
+STREAM_SYNC_RECENT_LIMIT = get_optional_int_env("STREAM_SYNC_RECENT_LIMIT", 20)
 EXPERIMENT_ENABLED = get_optional_bool_env("EXPERIMENT_ENABLED", True)
 EXPERIMENT_LOG_DIR = (
     get_optional_str_env("EXPERIMENT_LOG_DIR")

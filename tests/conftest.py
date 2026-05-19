@@ -15,6 +15,7 @@ from app.infrastructure.grpc.processing_relay_client import processing_relay_ser
 from app.infrastructure.storage import file_utils
 from app.services.stream.stream_experiment import clear_stream_experiment_recorder
 from app.services.stream.state import stream_state
+from app.services.sync import stream_sync_service
 
 
 @pytest.fixture
@@ -44,6 +45,7 @@ def session_factory(tmp_path):
 def app(session_factory, storage_dir):
     stream_state.clear()
     processing_relay_service.clear()
+    stream_sync_service.clear()
     clear_stream_experiment_recorder()
     test_app = FastAPI()
     test_app.include_router(capture_router)
@@ -62,6 +64,7 @@ def app(session_factory, storage_dir):
     yield test_app
     stream_state.clear()
     processing_relay_service.clear()
+    stream_sync_service.clear()
     clear_stream_experiment_recorder()
 
 

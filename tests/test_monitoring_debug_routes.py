@@ -173,6 +173,7 @@ def test_monitoring_events_returns_sse_snapshot(client, session_factory):
     assert '"device_id":"camera1"' in response.text
     assert '"grpc_ingest"' in response.text
     assert '"relay"' in response.text
+    assert '"sync"' in response.text
     assert '"timestamp_delta"' in response.text
 
 

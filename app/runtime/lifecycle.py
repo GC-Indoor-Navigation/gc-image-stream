@@ -14,6 +14,11 @@ from app.core.server import (
     STREAM_RELAY_ENABLED,
     STREAM_RELAY_TARGET,
     STREAM_RELAY_TIMEOUT_SEC,
+    STREAM_SYNC_BUFFER_SIZE,
+    STREAM_SYNC_ENABLED,
+    STREAM_SYNC_EXPECTED_CAMERAS,
+    STREAM_SYNC_RECENT_LIMIT,
+    STREAM_SYNC_WINDOW_MS,
 )
 from app.infrastructure.grpc.grpc_ingest_server import grpc_ingest_service
 from app.infrastructure.grpc.processing_relay_client import processing_relay_service
@@ -22,6 +27,7 @@ from app.services.stream.stream_experiment import (
     clear_stream_experiment_recorder,
     configure_stream_experiment_recorder,
 )
+from app.services.sync import stream_sync_service
 
 
 logger = logging.getLogger("gc_image_stream.app")
@@ -77,6 +83,22 @@ async def startup_application():
         )
         logger.info(format_log_event("stream_relay_disabled"))
 
+    stream_sync_service.configure(
+        enabled=STREAM_SYNC_ENABLED,
+        expected_cameras=STREAM_SYNC_EXPECTED_CAMERAS,
+        window_ms=STREAM_SYNC_WINDOW_MS,
+        buffer_size=STREAM_SYNC_BUFFER_SIZE,
+        recent_limit=STREAM_SYNC_RECENT_LIMIT,
+    )
+    logger.info(
+        format_log_event(
+            "stream_sync_configured",
+            enabled=STREAM_SYNC_ENABLED,
+            expected_cameras=",".join(STREAM_SYNC_EXPECTED_CAMERAS),
+            window_ms=STREAM_SYNC_WINDOW_MS,
+        )
+    )
+
     if grpc_ingest_enabled:
         grpc_ingest_service.configure(
             bind=GRPC_INGEST_BIND,
@@ -110,5 +132,6 @@ async def shutdown_application():
     camera_session_manager.stop_all()
     grpc_ingest_service.stop()
     processing_relay_service.stop()
+    stream_sync_service.clear()
     clear_stream_experiment_recorder()
     logger.info(format_log_event("camera_sessions_stopped"))

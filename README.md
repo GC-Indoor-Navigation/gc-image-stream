@@ -8,10 +8,12 @@ an external Processing Server.
 
 - accept frames from camera sources or app clients
 - store image files and frame metadata
+- optionally build synchronized frame sets in-process
 - expose Monitoring / Debug Viewer state
 - relay frames to the Processing Server over gRPC
 
-This repository does not implement Processing Server sync or AI logic.
+This repository does not implement AI processing logic. Stream-side sync is an
+opt-in migration path while the raw Processing Server relay remains available.
 
 ## Current Shape
 
@@ -68,6 +70,12 @@ STREAM_RELAY_ENABLED=true
 STREAM_RELAY_TARGET=127.0.0.1:50051
 STREAM_RELAY_TIMEOUT_SEC=
 
+STREAM_SYNC_ENABLED=false
+STREAM_SYNC_WINDOW_MS=50
+STREAM_SYNC_EXPECTED_CAMERAS=camera1,camera2,camera3,camera4
+STREAM_SYNC_BUFFER_SIZE=120
+STREAM_SYNC_RECENT_LIMIT=20
+
 EXPERIMENT_ENABLED=false
 EXPERIMENT_ID=
 EXPERIMENT_LOG_DIR=experiment_logs
@@ -99,6 +107,7 @@ CAMERA1_CAPTURE_TIMEOUT_SEC=10
 - Monitoring Viewer: `/monitoring/viewer`
 - Debug Viewer: `/debug/viewer`
 - Relay status: `/monitoring/relay`
+- Sync status: `/monitoring/sync`
 - Internal calibration upload: `POST /capture/internal-calibration`
 
 ## Docs

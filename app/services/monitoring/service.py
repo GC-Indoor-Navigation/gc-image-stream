@@ -9,6 +9,7 @@ from app.services.stream.state import (
     current_time_ms,
     stream_state,
 )
+from app.services.sync import stream_sync_service
 
 
 STALE_THRESHOLD_MS = 3_000
@@ -109,3 +110,7 @@ def get_relay_status():
 
 def get_grpc_ingest_status():
     return grpc_ingest_service.status()
+
+
+def get_sync_status():
+    return stream_sync_service.status()

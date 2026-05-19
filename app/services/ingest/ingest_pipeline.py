@@ -12,6 +12,7 @@ from app.infrastructure.storage.file_utils import build_frame_path
 from app.services.frames.service import create_frame
 from app.services.stream.stream_experiment import get_stream_experiment_recorder
 from app.services.stream.state import StreamState, stream_state
+from app.services.sync import StreamSyncService, SyncInputFrame, stream_sync_service
 
 
 def ingest_frame(
@@ -25,6 +26,7 @@ def ingest_frame(
     session_id: str | None = None,
     state: StreamState = stream_state,
     relay_service: ProcessingRelayService = processing_relay_service,
+    sync_service: StreamSyncService = stream_sync_service,
 ):
     started_at = time.monotonic()
     target_filename = filename or f"{device_id}_{timestamp_ms}.jpg"
@@ -62,6 +64,17 @@ def ingest_frame(
             file_path=frame.file_path,
         )
     )
+    synchronized_frame_set = sync_service.handle_frame(
+        SyncInputFrame(
+            frame_id=frame.id,
+            device_id=frame.device_id,
+            timestamp_ms=frame.timestamp,
+            sequence=sequence,
+            content_type=content_type,
+            image_bytes=image_bytes,
+            file_path=frame.file_path,
+        )
+    )
     experiment_recorder = get_stream_experiment_recorder()
     if experiment_recorder is not None:
         experiment_recorder.record_registration(
@@ -76,4 +89,5 @@ def ingest_frame(
         "frame": frame,
         "camera_state": camera_state,
         "relay_enqueued": relay_enqueued,
+        "synchronized_frame_set": synchronized_frame_set,
     }

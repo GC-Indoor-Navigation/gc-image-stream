@@ -9,6 +9,7 @@ from app.services.monitoring.service import (
     get_camera_state,
     get_grpc_ingest_status,
     get_relay_status,
+    get_sync_status,
     list_camera_states,
 )
 
@@ -392,6 +393,7 @@ def build_monitoring_snapshot():
         "cameras": list_camera_states(),
         "grpc_ingest": get_grpc_ingest_status(),
         "relay": get_relay_status(),
+        "sync": get_sync_status(),
         "timestamp_delta": get_latest_timestamp_delta(),
     }
 
@@ -459,3 +461,12 @@ def get_camera(device_id: str):
 )
 def get_relay():
     return get_relay_status()
+
+
+@router.get(
+    "/sync",
+    summary="Stream sync status",
+    description="Stream Server frame synchronization status.",
+)
+def get_sync():
+    return get_sync_status()
