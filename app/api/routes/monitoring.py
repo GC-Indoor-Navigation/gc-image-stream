@@ -143,7 +143,8 @@ MONITORING_VIEWER_HTML = """<!doctype html>
     .stale { color: var(--warn); border-color: #fed7aa; background: #fff7ed; }
     .disconnected { color: var(--bad); border-color: #fecaca; background: #fef2f2; }
     .runtime-grid,
-    .relay-grid {
+    .relay-grid,
+    .sync-grid {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 10px;
@@ -180,12 +181,14 @@ MONITORING_VIEWER_HTML = """<!doctype html>
     @media (max-width: 1080px) {
       .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .runtime-grid,
-      .relay-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .relay-grid,
+      .sync-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 720px) {
       .summary-grid,
       .runtime-grid,
-      .relay-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .relay-grid,
+      .sync-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       table, thead, tbody, th, td, tr { display: block; }
       thead { display: none; }
       td { padding-top: 4px; padding-bottom: 8px; }
@@ -219,6 +222,13 @@ MONITORING_VIEWER_HTML = """<!doctype html>
     </section>
     <section class="panel">
       <div class="panel-head">
+        <span>Sync</span>
+        <span class="meta">Frame matching</span>
+      </div>
+      <div class="sync-grid" id="syncGrid"></div>
+    </section>
+    <section class="panel">
+      <div class="panel-head">
         <span>Cameras</span>
         <span class="meta">Operational view</span>
       </div>
@@ -245,6 +255,7 @@ MONITORING_VIEWER_HTML = """<!doctype html>
     const summaryGrid = document.getElementById("summaryGrid");
     const ingestGrid = document.getElementById("ingestGrid");
     const relayGrid = document.getElementById("relayGrid");
+    const syncGrid = document.getElementById("syncGrid");
     const cameraTable = document.getElementById("cameraTable");
     const lastUpdated = document.getElementById("lastUpdated");
     const refreshButton = document.getElementById("refreshButton");
@@ -317,6 +328,20 @@ MONITORING_VIEWER_HTML = """<!doctype html>
       ].join("");
     }
 
+    function renderSync(sync) {
+      const expected = (sync.expected_cameras || []).join(", ") || "-";
+      syncGrid.innerHTML = [
+        relayCard("Enabled", sync.enabled ? "true" : "false", sync.enabled ? "healthy" : ""),
+        relayCard("Expected Cameras", expected),
+        relayCard("Window", sync.window_ms ?? "-"),
+        relayCard("Matched", sync.matched_count ?? 0, Number(sync.matched_count || 0) > 0 ? "healthy" : ""),
+        relayCard("Missed", sync.missed_count ?? 0, Number(sync.missed_count || 0) > 0 ? "stale" : "healthy"),
+        relayCard("Duplicate", sync.duplicate_count ?? 0, Number(sync.duplicate_count || 0) > 0 ? "stale" : "healthy"),
+        relayCard("Last Reason", sync.last_reason || "-"),
+        relayCard("Last Frame Set", sync.last_frame_set_id ?? "-"),
+      ].join("");
+    }
+
     function renderCameras(cameras) {
       if (cameras.length === 0) {
         cameraTable.innerHTML = '<tr><td colspan="8" class="meta">No camera state</td></tr>';
@@ -340,23 +365,27 @@ MONITORING_VIEWER_HTML = """<!doctype html>
       const cameras = payload.cameras || [];
       const ingest = payload.grpc_ingest || {};
       const relay = payload.relay || {};
+      const sync = payload.sync || {};
       renderSummary(cameras, relay);
       renderIngest(ingest);
       renderRelay(relay);
+      renderSync(sync);
       renderCameras(cameras);
       lastUpdated.textContent = new Date().toLocaleTimeString();
     }
 
     async function loadFallback() {
-      const [cameraResponse, ingestResponse, relayResponse] = await Promise.all([
+      const [cameraResponse, ingestResponse, relayResponse, syncResponse] = await Promise.all([
         fetch("/monitoring/cameras"),
         fetch("/monitoring/grpc-ingest"),
         fetch("/monitoring/relay"),
+        fetch("/monitoring/sync"),
       ]);
       applyPayload({
         cameras: (await cameraResponse.json()).items || [],
         grpc_ingest: await ingestResponse.json(),
         relay: await relayResponse.json(),
+        sync: await syncResponse.json(),
       });
     }
 

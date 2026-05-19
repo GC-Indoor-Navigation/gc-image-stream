@@ -184,6 +184,9 @@ def test_monitoring_viewer_returns_html(client):
     assert "text/html" in response.headers["content-type"]
     assert "GC Monitoring" in response.text
     assert "gRPC Ingest" in response.text
+    assert "Sync" in response.text
+    assert 'fetch("/monitoring/sync")' in response.text
+    assert "renderSync(sync)" in response.text
     assert 'new EventSource("/monitoring/events")' in response.text
 
 
