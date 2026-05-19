@@ -95,6 +95,11 @@ class GrpcIngestService:
         self.expected_device_ids: set[str] = set()
         self.gate_open = True
         self.observed_device_ids: set[str] = set()
+        self.active_device_ids: set[str] = set()
+        self.active_device_stream_counts: dict[str, int] = {}
+        self.collection_started = False
+        self.collection_stopped = False
+        self.collection_stop_reason: str | None = None
         self.gate_lock = Lock()
         self.db_factory = db_factory
         self.ingest_func = ingest_func
@@ -126,6 +131,11 @@ class GrpcIngestService:
             )
         self.gate_open = not self._gate_enabled()
         self.observed_device_ids = set()
+        self.active_device_ids = set()
+        self.active_device_stream_counts = {}
+        self.collection_started = not self._gate_enabled()
+        self.collection_stopped = False
+        self.collection_stop_reason = None
 
     def start(self):
         if not self.enabled:
@@ -162,7 +172,7 @@ class GrpcIngestService:
 
     def status(self):
         expected_device_ids = sorted(self.expected_device_ids)
-        missing_device_ids = sorted(self.expected_device_ids - self.observed_device_ids)
+        missing_device_ids = sorted(self.expected_device_ids - self.active_device_ids)
         unexpected_device_ids = sorted(self.observed_device_ids - self.expected_device_ids)
         return {
             "enabled": self.enabled,
@@ -173,8 +183,12 @@ class GrpcIngestService:
             "expected_device_count": self.expected_device_count,
             "expected_device_ids": expected_device_ids,
             "observed_device_ids": sorted(self.observed_device_ids),
+            "active_device_ids": sorted(self.active_device_ids),
             "missing_device_ids": missing_device_ids,
             "unexpected_device_ids": unexpected_device_ids if self.expected_device_ids else [],
+            "collection_started": self.collection_started,
+            "collection_stopped": self.collection_stopped,
+            "collection_stop_reason": self.collection_stop_reason,
         }
 
     def _gate_enabled(self) -> bool:
@@ -182,7 +196,8 @@ class GrpcIngestService:
 
     def _allow_ingest(self, device_id: str) -> bool:
         with self.gate_lock:
-            self.observed_device_ids.add(device_id)
+            if self.collection_stopped:
+                return False
 
             if self.expected_device_ids and device_id not in self.expected_device_ids:
                 return False
@@ -192,15 +207,63 @@ class GrpcIngestService:
 
             if self.expected_device_ids:
                 expected_devices_seen = self.expected_device_ids.issubset(
-                    self.observed_device_ids
+                    self.active_device_ids
                 )
                 if expected_devices_seen:
                     self.gate_open = True
+                    self.collection_started = True
                 return False
 
-            if len(self.observed_device_ids) >= (self.expected_device_count or 0):
+            if len(self.active_device_ids) >= (self.expected_device_count or 0):
                 self.gate_open = True
+                self.collection_started = True
             return False
+
+    def _mark_device_active(self, device_id: str):
+        with self.gate_lock:
+            self.observed_device_ids.add(device_id)
+            self.active_device_stream_counts[device_id] = (
+                self.active_device_stream_counts.get(device_id, 0) + 1
+            )
+            self.active_device_ids.add(device_id)
+
+    def _mark_stream_closed(self, device_ids: set[str]):
+        if not device_ids:
+            return
+
+        with self.gate_lock:
+            for device_id in device_ids:
+                stream_count = self.active_device_stream_counts.get(device_id, 0) - 1
+                if stream_count > 0:
+                    self.active_device_stream_counts[device_id] = stream_count
+                else:
+                    self.active_device_stream_counts.pop(device_id, None)
+                    self.active_device_ids.discard(device_id)
+            if (
+                not self.collection_started
+                or self.collection_stopped
+                or not self._gate_enabled()
+            ):
+                return
+
+            if self.expected_device_ids:
+                missing_device_ids = sorted(
+                    self.expected_device_ids - self.active_device_ids
+                )
+                if not missing_device_ids:
+                    return
+                self.gate_open = False
+                self.collection_stopped = True
+                self.collection_stop_reason = (
+                    "expected device disconnected: "
+                    + ",".join(missing_device_ids)
+                )
+                return
+
+            if len(self.active_device_ids) < (self.expected_device_count or 0):
+                self.gate_open = False
+                self.collection_stopped = True
+                self.collection_stop_reason = "expected device count disconnected"
 
     def _stream_frames(
         self,
@@ -208,76 +271,84 @@ class GrpcIngestService:
         context,
     ) -> StreamFramesResponse:
         received_count = 0
+        stream_device_ids: set[str] = set()
 
-        for request in request_iterator:
-            metadata = request.metadata
-            internal_device_id = metadata.device_id or metadata.camera_id
-            if not internal_device_id:
-                return StreamFramesResponse(
-                    received_frames=received_count,
-                    message="device_id or camera_id is required",
-                )
-            if metadata.device_timestamp_ms <= 0:
-                return StreamFramesResponse(
-                    received_frames=received_count,
-                    message="device_timestamp_ms must be greater than 0",
-                )
+        try:
+            for request in request_iterator:
+                metadata = request.metadata
+                internal_device_id = metadata.device_id or metadata.camera_id
+                if not internal_device_id:
+                    return StreamFramesResponse(
+                        received_frames=received_count,
+                        message="device_id or camera_id is required",
+                    )
+                if metadata.device_timestamp_ms <= 0:
+                    return StreamFramesResponse(
+                        received_frames=received_count,
+                        message="device_timestamp_ms must be greater than 0",
+                    )
 
-            content_type = resolve_content_type(metadata.format or "jpeg")
-            camera_id = metadata.camera_id or "unknown"
-            filename = f"{internal_device_id}_{camera_id}_{metadata.frame_sequence}.jpg"
-            session_id = metadata.session_id if metadata.HasField("session_id") else None
-            received_at = time.monotonic()
-            experiment_recorder = get_stream_experiment_recorder()
-            if experiment_recorder is not None:
-                experiment_recorder.observe_device(internal_device_id)
-            if not self._allow_ingest(internal_device_id):
-                continue
+                if internal_device_id not in stream_device_ids:
+                    stream_device_ids.add(internal_device_id)
+                    self._mark_device_active(internal_device_id)
 
-            db = self.db_factory()
-            try:
-                result = self.ingest_func(
-                    db,
-                    device_id=internal_device_id,
-                    timestamp_ms=metadata.device_timestamp_ms,
-                    image_bytes=request.jpeg,
-                    sequence=metadata.frame_sequence or None,
-                    content_type=content_type,
-                    filename=filename,
-                    session_id=session_id,
-                    state=self.state,
-                    relay_service=self.relay_service,
-                )
-                ingested_at = time.monotonic()
+                content_type = resolve_content_type(metadata.format or "jpeg")
+                camera_id = metadata.camera_id or "unknown"
+                filename = f"{internal_device_id}_{camera_id}_{metadata.frame_sequence}.jpg"
+                session_id = metadata.session_id if metadata.HasField("session_id") else None
+                received_at = time.monotonic()
+                experiment_recorder = get_stream_experiment_recorder()
                 if experiment_recorder is not None:
-                    experiment_recorder.record_capture(
+                    experiment_recorder.observe_device(internal_device_id)
+                if not self._allow_ingest(internal_device_id):
+                    continue
+
+                db = self.db_factory()
+                try:
+                    result = self.ingest_func(
+                        db,
                         device_id=internal_device_id,
                         timestamp_ms=metadata.device_timestamp_ms,
-                        sequence=metadata.frame_sequence or 0,
-                        capture_label="grpc_ingest",
-                        capture_elapsed=0.0,
-                        save_elapsed=ingested_at - received_at,
-                        cycle_elapsed=ingested_at - received_at,
-                        queue_size=0,
-                        scheduled_at=received_at,
-                        captured_at=received_at,
-                        image_bytes_size=len(request.jpeg),
+                        image_bytes=request.jpeg,
+                        sequence=metadata.frame_sequence or None,
+                        content_type=content_type,
+                        filename=filename,
+                        session_id=session_id,
+                        state=self.state,
+                        relay_service=self.relay_service,
                     )
-                write_ingest_metadata_sidecar(
-                    result["frame"].file_path,
-                    {
-                        "service": "gc.collector.v1.FrameIngestService",
-                        "metadata": MessageToDict(
-                            metadata,
-                            preserving_proto_field_name=True,
-                            always_print_fields_with_no_presence=True,
-                        ),
-                    },
-                )
-            finally:
-                db.close()
+                    ingested_at = time.monotonic()
+                    if experiment_recorder is not None:
+                        experiment_recorder.record_capture(
+                            device_id=internal_device_id,
+                            timestamp_ms=metadata.device_timestamp_ms,
+                            sequence=metadata.frame_sequence or 0,
+                            capture_label="grpc_ingest",
+                            capture_elapsed=0.0,
+                            save_elapsed=ingested_at - received_at,
+                            cycle_elapsed=ingested_at - received_at,
+                            queue_size=0,
+                            scheduled_at=received_at,
+                            captured_at=received_at,
+                            image_bytes_size=len(request.jpeg),
+                        )
+                    write_ingest_metadata_sidecar(
+                        result["frame"].file_path,
+                        {
+                            "service": "gc.collector.v1.FrameIngestService",
+                            "metadata": MessageToDict(
+                                metadata,
+                                preserving_proto_field_name=True,
+                                always_print_fields_with_no_presence=True,
+                            ),
+                        },
+                    )
+                finally:
+                    db.close()
 
-            received_count += 1
+                received_count += 1
+        finally:
+            self._mark_stream_closed(stream_device_ids)
 
         return StreamFramesResponse(
             received_frames=received_count,

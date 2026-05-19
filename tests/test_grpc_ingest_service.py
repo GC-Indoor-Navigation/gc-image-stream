@@ -452,7 +452,9 @@ def test_grpc_ingest_service_drops_pre_gate_frames_until_all_devices_are_seen(
     assert [call["sequence"] for call in captured_calls] == [2, 2]
     assert [call["image_bytes"] for call in captured_calls] == [b"keep-1", b"keep-2"]
     assert service.status()["gate_enabled"] is True
-    assert service.status()["gate_open"] is True
+    assert service.status()["gate_open"] is False
+    assert service.status()["collection_started"] is True
+    assert service.status()["collection_stopped"] is True
     assert service.status()["observed_device_ids"] == ["android_01", "android_02"]
 
 
@@ -555,8 +557,73 @@ def test_grpc_ingest_service_gates_by_expected_device_ids(
     assert [call["sequence"] for call in captured_calls] == [2, 2]
     assert [call["image_bytes"] for call in captured_calls] == [b"keep-1", b"keep-2"]
     assert service.status()["gate_enabled"] is True
-    assert service.status()["gate_open"] is True
+    assert service.status()["gate_open"] is False
+    assert service.status()["collection_started"] is True
+    assert service.status()["collection_stopped"] is True
     assert service.status()["expected_device_count"] == 2
     assert service.status()["expected_device_ids"] == ["android_01", "android_02"]
-    assert service.status()["missing_device_ids"] == []
+    assert service.status()["missing_device_ids"] == ["android_01", "android_02"]
     assert service.status()["unexpected_device_ids"] == ["unexpected_android"]
+
+
+def test_grpc_ingest_service_stops_collection_when_expected_device_disconnects():
+    service = GrpcIngestService()
+    service.configure(
+        bind="127.0.0.1:0",
+        enabled=True,
+        expected_device_ids=["android_01", "android_02"],
+    )
+
+    service._mark_device_active("android_01")
+    assert service._allow_ingest("android_01") is False
+
+    service._mark_device_active("android_02")
+    assert service._allow_ingest("android_02") is False
+
+    status = service.status()
+    assert status["gate_open"] is True
+    assert status["collection_started"] is True
+    assert status["collection_stopped"] is False
+    assert status["active_device_ids"] == ["android_01", "android_02"]
+    assert status["missing_device_ids"] == []
+    assert service._allow_ingest("android_01") is True
+
+    service._mark_stream_closed({"android_02"})
+
+    status = service.status()
+    assert status["gate_open"] is False
+    assert status["collection_stopped"] is True
+    assert status["collection_stop_reason"] == "expected device disconnected: android_02"
+    assert status["active_device_ids"] == ["android_01"]
+    assert status["missing_device_ids"] == ["android_02"]
+    assert service._allow_ingest("android_01") is False
+
+    service._mark_device_active("android_02")
+    assert service._allow_ingest("android_02") is False
+
+
+def test_grpc_ingest_service_keeps_device_active_until_all_streams_close():
+    service = GrpcIngestService()
+    service.configure(
+        bind="127.0.0.1:0",
+        enabled=True,
+        expected_device_ids=["android_01", "android_02"],
+    )
+
+    service._mark_device_active("android_01")
+    service._mark_device_active("android_01")
+    service._mark_device_active("android_02")
+    assert service._allow_ingest("android_02") is False
+
+    service._mark_stream_closed({"android_01"})
+
+    status = service.status()
+    assert status["collection_stopped"] is False
+    assert status["active_device_ids"] == ["android_01", "android_02"]
+
+    service._mark_stream_closed({"android_01"})
+
+    status = service.status()
+    assert status["collection_stopped"] is True
+    assert status["active_device_ids"] == ["android_02"]
+    assert status["missing_device_ids"] == ["android_01"]

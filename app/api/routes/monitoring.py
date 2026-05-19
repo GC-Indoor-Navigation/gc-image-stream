@@ -342,6 +342,7 @@ MONITORING_VIEWER_HTML = """<!doctype html>
     function renderIngest(ingest) {
       const expected = (ingest.expected_device_ids || []).join(", ") || ingest.expected_device_count || "-";
       const observed = (ingest.observed_device_ids || []).join(", ") || "-";
+      const active = (ingest.active_device_ids || []).join(", ") || "-";
       const missing = (ingest.missing_device_ids || []).join(", ") || "-";
       const unexpected = (ingest.unexpected_device_ids || []).join(", ") || "-";
       ingestGrid.innerHTML = [
@@ -352,8 +353,12 @@ MONITORING_VIEWER_HTML = """<!doctype html>
         relayCard("Gate Open", ingest.gate_open ? "true" : "false", ingest.gate_open ? "healthy" : "stale"),
         relayCard("Expected Devices", expected),
         relayCard("Observed Devices", observed),
+        relayCard("Active Devices", active, active === "-" ? "stale" : "healthy"),
         relayCard("Missing Devices", missing, missing === "-" ? "healthy" : "stale"),
         relayCard("Unexpected Devices", unexpected, unexpected === "-" ? "healthy" : "stale"),
+        relayCard("Collection Started", ingest.collection_started ? "true" : "false", ingest.collection_started ? "healthy" : ""),
+        relayCard("Collection Stopped", ingest.collection_stopped ? "true" : "false", ingest.collection_stopped ? "stale" : "healthy"),
+        relayCard("Stop Reason", ingest.collection_stop_reason || "-", ingest.collection_stop_reason ? "stale" : "healthy"),
       ].join("");
     }
 

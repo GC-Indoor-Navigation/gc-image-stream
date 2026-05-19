@@ -171,7 +171,11 @@ def test_monitoring_grpc_ingest_returns_gate_status(client):
     assert body["expected_device_count"] == 3
     assert body["expected_device_ids"] == ["android_01", "android_02", "android_03"]
     assert body["observed_device_ids"] == []
+    assert body["active_device_ids"] == []
     assert body["missing_device_ids"] == ["android_01", "android_02", "android_03"]
+    assert body["collection_started"] is False
+    assert body["collection_stopped"] is False
+    assert body["collection_stop_reason"] is None
 
 
 def test_monitoring_events_returns_sse_snapshot(client, session_factory):

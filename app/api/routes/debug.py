@@ -348,6 +348,7 @@ DEBUG_VIEWER_HTML = """<!doctype html>
     function renderIngest(status) {
       const expected = (status.expected_device_ids || []).join(", ") || status.expected_device_count || "-";
       const observed = (status.observed_device_ids || []).join(", ") || "-";
+      const active = (status.active_device_ids || []).join(", ") || "-";
       const missing = (status.missing_device_ids || []).join(", ") || "-";
       const unexpected = (status.unexpected_device_ids || []).join(", ") || "-";
       ingestStatus.innerHTML = [
@@ -358,8 +359,12 @@ DEBUG_VIEWER_HTML = """<!doctype html>
         metric("Gate Open", status.gate_open ? "true" : "false", status.gate_open ? "ok" : "warn"),
         metric("Expected", expected),
         metric("Observed", observed),
+        metric("Active", active, active === "-" ? "warn" : "ok"),
         metric("Missing", missing, missing === "-" ? "ok" : "warn"),
         metric("Unexpected", unexpected, unexpected === "-" ? "ok" : "warn"),
+        metric("Started", status.collection_started ? "true" : "false", status.collection_started ? "ok" : ""),
+        metric("Stopped", status.collection_stopped ? "true" : "false", status.collection_stopped ? "warn" : "ok"),
+        metric("Stop Reason", status.collection_stop_reason || "-", status.collection_stop_reason ? "warn" : "ok"),
       ].join("");
     }
 
