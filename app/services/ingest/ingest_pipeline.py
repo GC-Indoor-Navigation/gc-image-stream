@@ -3,6 +3,12 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
+from app.core.relay import (
+    STREAM_RELAY_MODE_FRAME_SET,
+    STREAM_RELAY_MODE_OFF,
+    STREAM_RELAY_MODE_RAW,
+    normalize_stream_relay_mode,
+)
 from app.infrastructure.grpc.generated.processing_relay_pb2 import RelayFrame
 from app.infrastructure.grpc.processing_relay_client import (
     ProcessingFrameSetRelayService,
@@ -15,6 +21,20 @@ from app.services.frames.service import create_frame
 from app.services.stream.stream_experiment import get_stream_experiment_recorder
 from app.services.stream.state import StreamState, stream_state
 from app.services.sync import StreamSyncService, SyncInputFrame, stream_sync_service
+
+
+def resolve_ingest_relay_mode(
+    relay_mode: str | None,
+    relay_service: ProcessingRelayService,
+    frame_set_relay_service: ProcessingFrameSetRelayService,
+) -> str:
+    if relay_mode is not None:
+        return normalize_stream_relay_mode(relay_mode)
+    if frame_set_relay_service.enabled:
+        return STREAM_RELAY_MODE_FRAME_SET
+    if relay_service.enabled:
+        return STREAM_RELAY_MODE_RAW
+    return STREAM_RELAY_MODE_OFF
 
 
 def ingest_frame(
@@ -30,6 +50,7 @@ def ingest_frame(
     relay_service: ProcessingRelayService = processing_relay_service,
     sync_service: StreamSyncService = stream_sync_service,
     frame_set_relay_service: ProcessingFrameSetRelayService = processing_frame_set_relay_service,
+    relay_mode: str | None = None,
 ):
     started_at = time.monotonic()
     target_filename = filename or f"{device_id}_{timestamp_ms}.jpg"
@@ -57,15 +78,24 @@ def ingest_frame(
         content_type=content_type,
         image_bytes_size=len(image_bytes),
     )
-    relay_enqueued = relay_service.enqueue(
-        RelayFrame(
-            device_id=frame.device_id,
-            timestamp_ms=frame.timestamp,
-            sequence=sequence or 0,
-            content_type=content_type,
-            image_bytes=image_bytes,
-            file_path=frame.file_path,
+    selected_relay_mode = resolve_ingest_relay_mode(
+        relay_mode,
+        relay_service,
+        frame_set_relay_service,
+    )
+    relay_enqueued = (
+        relay_service.enqueue(
+            RelayFrame(
+                device_id=frame.device_id,
+                timestamp_ms=frame.timestamp,
+                sequence=sequence or 0,
+                content_type=content_type,
+                image_bytes=image_bytes,
+                file_path=frame.file_path,
+            )
         )
+        if selected_relay_mode == STREAM_RELAY_MODE_RAW
+        else False
     )
     synchronized_frame_set = sync_service.handle_frame(
         SyncInputFrame(
@@ -80,7 +110,10 @@ def ingest_frame(
     )
     frame_set_relay_enqueued = (
         frame_set_relay_service.enqueue_synchronized_frame_set(synchronized_frame_set)
-        if synchronized_frame_set is not None
+        if (
+            selected_relay_mode == STREAM_RELAY_MODE_FRAME_SET
+            and synchronized_frame_set is not None
+        )
         else False
     )
     experiment_recorder = get_stream_experiment_recorder()
@@ -97,6 +130,7 @@ def ingest_frame(
         "frame": frame,
         "camera_state": camera_state,
         "relay_enqueued": relay_enqueued,
+        "relay_mode": selected_relay_mode,
         "synchronized_frame_set": synchronized_frame_set,
         "frame_set_relay_enqueued": frame_set_relay_enqueued,
     }

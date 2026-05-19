@@ -102,6 +102,30 @@ def test_ingest_frame_enqueues_relay_when_enabled(session_factory):
         db.close()
 
 
+def test_ingest_frame_can_force_raw_relay_mode(session_factory):
+    db = session_factory()
+    state = StreamState()
+    relay_service = ProcessingRelayService()
+    relay_service.configure(target="127.0.0.1:50051", enabled=True)
+    try:
+        result = ingest_frame(
+            db,
+            device_id="camera1",
+            timestamp_ms=1000,
+            sequence=1,
+            image_bytes=b"frame",
+            state=state,
+            relay_service=relay_service,
+            relay_mode="raw",
+        )
+
+        assert result["relay_mode"] == "raw"
+        assert result["relay_enqueued"] is True
+        assert relay_service.status()["queue_size"] == 1
+    finally:
+        db.close()
+
+
 def test_ingest_frame_enqueues_relay_without_sequence(session_factory):
     db = session_factory()
     state = StreamState()

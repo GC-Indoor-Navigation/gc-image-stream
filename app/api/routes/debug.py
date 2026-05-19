@@ -334,6 +334,8 @@ DEBUG_VIEWER_HTML = """<!doctype html>
 
     function renderRelay(status) {
       relayStatus.innerHTML = [
+        metric("Mode", status.relay_mode || "-"),
+        metric("Selected", status.selected ? "true" : "false", status.selected ? "ok" : ""),
         metric("Enabled", status.enabled ? "true" : "false", status.enabled ? "ok" : ""),
         metric("Running", status.running ? "true" : "false", status.running ? "ok" : "warn"),
         metric("Queue", status.queue_size),

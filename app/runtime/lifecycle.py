@@ -15,6 +15,7 @@ from app.core.server import (
     STREAM_FRAME_SET_RELAY_TARGET,
     STREAM_FRAME_SET_RELAY_TIMEOUT_SEC,
     STREAM_RELAY_ENABLED,
+    STREAM_RELAY_MODE,
     STREAM_RELAY_TARGET,
     STREAM_RELAY_TIMEOUT_SEC,
     STREAM_SYNC_BUFFER_SIZE,
@@ -49,6 +50,14 @@ def resolve_sync_expected_cameras(
     return [config.device_id for config in grpc_camera_configs]
 
 
+def resolve_selected_relay_target() -> str:
+    if STREAM_RELAY_ENABLED:
+        return STREAM_RELAY_TARGET
+    if STREAM_FRAME_SET_RELAY_ENABLED:
+        return STREAM_FRAME_SET_RELAY_TARGET
+    return ""
+
+
 async def startup_application():
     camera_configs = []
     if CAMERA_SESSIONS_ENABLED:
@@ -74,7 +83,7 @@ async def startup_application():
         duration_sec=EXPERIMENT_DURATION_SEC,
         expected_device_count=len(grpc_camera_configs) if len(grpc_camera_configs) > 1 else None,
         storage_dir=STORAGE_DIR,
-        relay_target=STREAM_RELAY_TARGET if STREAM_RELAY_ENABLED else "",
+        relay_target=resolve_selected_relay_target(),
         camera_ids=[config.device_id for config in camera_configs],
     )
 
@@ -88,6 +97,7 @@ async def startup_application():
         logger.info(
             format_log_event(
                 "stream_relay_started",
+                mode=STREAM_RELAY_MODE,
                 target=STREAM_RELAY_TARGET,
             )
         )
@@ -97,7 +107,12 @@ async def startup_application():
             timeout_sec=STREAM_RELAY_TIMEOUT_SEC,
             enabled=False,
         )
-        logger.info(format_log_event("stream_relay_disabled"))
+        logger.info(
+            format_log_event(
+                "stream_relay_disabled",
+                mode=STREAM_RELAY_MODE,
+            )
+        )
 
     if STREAM_FRAME_SET_RELAY_ENABLED:
         processing_frame_set_relay_service.configure(
@@ -109,6 +124,7 @@ async def startup_application():
         logger.info(
             format_log_event(
                 "stream_frame_set_relay_started",
+                mode=STREAM_RELAY_MODE,
                 target=STREAM_FRAME_SET_RELAY_TARGET,
             )
         )
@@ -118,7 +134,12 @@ async def startup_application():
             timeout_sec=STREAM_FRAME_SET_RELAY_TIMEOUT_SEC,
             enabled=False,
         )
-        logger.info(format_log_event("stream_frame_set_relay_disabled"))
+        logger.info(
+            format_log_event(
+                "stream_frame_set_relay_disabled",
+                mode=STREAM_RELAY_MODE,
+            )
+        )
 
     sync_expected_cameras = resolve_sync_expected_cameras(
         STREAM_SYNC_EXPECTED_CAMERAS,

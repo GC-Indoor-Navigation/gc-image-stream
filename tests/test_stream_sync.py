@@ -1,4 +1,7 @@
-from app.infrastructure.grpc.processing_relay_client import ProcessingFrameSetRelayService
+from app.infrastructure.grpc.processing_relay_client import (
+    ProcessingFrameSetRelayService,
+    ProcessingRelayService,
+)
 from app.services.ingest.ingest_pipeline import ingest_frame
 from app.services.stream.state import StreamState
 from app.services.sync import (
@@ -221,6 +224,58 @@ def test_ingest_frame_enqueues_frame_set_relay_when_sync_matches(
     status = frame_set_relay_service.status()
     assert status["queue_size"] == 1
     assert status["last_frame_set_id"] == 1
+
+
+def test_ingest_frame_uses_one_selected_relay_mode_when_both_services_enabled(
+    session_factory,
+    storage_dir,
+):
+    db = session_factory()
+    state = StreamState()
+    sync_service = StreamSyncService()
+    sync_service.configure(
+        enabled=True,
+        expected_cameras=["camera1", "camera2"],
+        window_ms=30,
+    )
+    relay_service = ProcessingRelayService()
+    relay_service.configure(target="127.0.0.1:50051", enabled=True)
+    frame_set_relay_service = ProcessingFrameSetRelayService()
+    frame_set_relay_service.configure(target="127.0.0.1:50051", enabled=True)
+    try:
+        first = ingest_frame(
+            db,
+            device_id="camera1",
+            timestamp_ms=1000,
+            sequence=1,
+            image_bytes=b"frame-1",
+            state=state,
+            relay_service=relay_service,
+            sync_service=sync_service,
+            frame_set_relay_service=frame_set_relay_service,
+        )
+        second = ingest_frame(
+            db,
+            device_id="camera2",
+            timestamp_ms=1010,
+            sequence=1,
+            image_bytes=b"frame-2",
+            state=state,
+            relay_service=relay_service,
+            sync_service=sync_service,
+            frame_set_relay_service=frame_set_relay_service,
+        )
+    finally:
+        db.close()
+
+    assert first["relay_mode"] == "frame_set"
+    assert second["relay_mode"] == "frame_set"
+    assert first["relay_enqueued"] is False
+    assert second["relay_enqueued"] is False
+    assert first["frame_set_relay_enqueued"] is False
+    assert second["frame_set_relay_enqueued"] is True
+    assert relay_service.status()["queue_size"] == 0
+    assert frame_set_relay_service.status()["queue_size"] == 1
 
 
 def test_monitoring_sync_returns_stream_sync_status(client):

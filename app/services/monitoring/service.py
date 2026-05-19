@@ -1,6 +1,7 @@
 from app.infrastructure.grpc.grpc_ingest_server import grpc_ingest_service
 from pathlib import Path
 
+from app.core.server import STREAM_RELAY_MODE
 from app.infrastructure.grpc.processing_relay_client import (
     processing_frame_set_relay_service,
     processing_relay_service,
@@ -108,11 +109,17 @@ def latest_frame_file_exists(db, device_id: str, state: StreamState = stream_sta
 
 
 def get_relay_status():
-    return processing_relay_service.status()
+    status = processing_relay_service.status()
+    status["relay_mode"] = STREAM_RELAY_MODE
+    status["selected"] = STREAM_RELAY_MODE == "raw"
+    return status
 
 
 def get_frame_set_relay_status():
-    return processing_frame_set_relay_service.status()
+    status = processing_frame_set_relay_service.status()
+    status["relay_mode"] = STREAM_RELAY_MODE
+    status["selected"] = STREAM_RELAY_MODE == "frame_set"
+    return status
 
 
 def get_grpc_ingest_status():

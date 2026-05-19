@@ -313,6 +313,8 @@ MONITORING_VIEWER_HTML = """<!doctype html>
 
     function renderRelay(relay) {
       relayGrid.innerHTML = [
+        relayCard("Mode", relay.relay_mode || "-"),
+        relayCard("Selected", relay.selected ? "true" : "false", relay.selected ? "healthy" : ""),
         relayCard("Enabled", relay.enabled ? "true" : "false", relay.enabled ? "healthy" : ""),
         relayCard("Running", relay.running ? "true" : "false", relay.running ? "healthy" : "stale"),
         relayCard("Target", relay.target || "-"),
@@ -326,6 +328,8 @@ MONITORING_VIEWER_HTML = """<!doctype html>
 
     function renderFrameSetRelay(relay) {
       frameSetRelayGrid.innerHTML = [
+        relayCard("Mode", relay.relay_mode || "-"),
+        relayCard("Selected", relay.selected ? "true" : "false", relay.selected ? "healthy" : ""),
         relayCard("Enabled", relay.enabled ? "true" : "false", relay.enabled ? "healthy" : ""),
         relayCard("Running", relay.running ? "true" : "false", relay.running ? "healthy" : "stale"),
         relayCard("Target", relay.target || "-"),
