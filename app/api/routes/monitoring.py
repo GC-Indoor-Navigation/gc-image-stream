@@ -223,6 +223,13 @@ MONITORING_VIEWER_HTML = """<!doctype html>
     </section>
     <section class="panel">
       <div class="panel-head">
+        <span>Frame-set Relay</span>
+        <span class="meta">Matched frame sets</span>
+      </div>
+      <div class="relay-grid" id="frameSetRelayGrid"></div>
+    </section>
+    <section class="panel">
+      <div class="panel-head">
         <span>Sync</span>
         <span class="meta">Frame matching</span>
       </div>
@@ -256,6 +263,7 @@ MONITORING_VIEWER_HTML = """<!doctype html>
     const summaryGrid = document.getElementById("summaryGrid");
     const ingestGrid = document.getElementById("ingestGrid");
     const relayGrid = document.getElementById("relayGrid");
+    const frameSetRelayGrid = document.getElementById("frameSetRelayGrid");
     const syncGrid = document.getElementById("syncGrid");
     const cameraTable = document.getElementById("cameraTable");
     const lastUpdated = document.getElementById("lastUpdated");
@@ -316,6 +324,21 @@ MONITORING_VIEWER_HTML = """<!doctype html>
       ].join("");
     }
 
+    function renderFrameSetRelay(relay) {
+      frameSetRelayGrid.innerHTML = [
+        relayCard("Enabled", relay.enabled ? "true" : "false", relay.enabled ? "healthy" : ""),
+        relayCard("Running", relay.running ? "true" : "false", relay.running ? "healthy" : "stale"),
+        relayCard("Target", relay.target || "-"),
+        relayCard("Queue", relay.queue_size, relay.queue_size > 0 ? "stale" : "healthy"),
+        relayCard("Enqueued", relay.enqueued_count ?? 0),
+        relayCard("Sent", relay.sent_count ?? 0),
+        relayCard("Ack", relay.ack_received_count ?? 0),
+        relayCard("Errors", relay.error_count ?? 0, Number(relay.error_count || 0) > 0 ? "disconnected" : "healthy"),
+        relayCard("Last Frame Set", relay.last_frame_set_id ?? "-"),
+        relayCard("Last Error", relay.last_error || "-", relay.last_error ? "disconnected" : ""),
+      ].join("");
+    }
+
     function renderIngest(ingest) {
       const observed = (ingest.observed_device_ids || []).join(", ") || "-";
       ingestGrid.innerHTML = [
@@ -366,26 +389,30 @@ MONITORING_VIEWER_HTML = """<!doctype html>
       const cameras = payload.cameras || [];
       const ingest = payload.grpc_ingest || {};
       const relay = payload.relay || {};
+      const frameSetRelay = payload.frame_set_relay || {};
       const sync = payload.sync || {};
       renderSummary(cameras, relay);
       renderIngest(ingest);
       renderRelay(relay);
+      renderFrameSetRelay(frameSetRelay);
       renderSync(sync);
       renderCameras(cameras);
       lastUpdated.textContent = new Date().toLocaleTimeString();
     }
 
     async function loadFallback() {
-      const [cameraResponse, ingestResponse, relayResponse, syncResponse] = await Promise.all([
+      const [cameraResponse, ingestResponse, relayResponse, frameSetRelayResponse, syncResponse] = await Promise.all([
         fetch("/monitoring/cameras"),
         fetch("/monitoring/grpc-ingest"),
         fetch("/monitoring/relay"),
+        fetch("/monitoring/frame-set-relay"),
         fetch("/monitoring/sync"),
       ]);
       applyPayload({
         cameras: (await cameraResponse.json()).items || [],
         grpc_ingest: await ingestResponse.json(),
         relay: await relayResponse.json(),
+        frame_set_relay: await frameSetRelayResponse.json(),
         sync: await syncResponse.json(),
       });
     }
