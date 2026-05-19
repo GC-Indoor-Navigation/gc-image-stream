@@ -64,7 +64,7 @@ def test_stream_sync_matcher_returns_none_until_all_cameras_are_present():
     assert status["last_reason"] == "missing cameras inside sync window"
 
 
-def test_stream_sync_matcher_deduplicates_same_frame_combination():
+def test_stream_sync_matcher_does_not_reemit_same_frame_combination():
     buffer_manager = SyncFrameBufferManager(buffer_size=120)
     matcher = SyncMatcher(
         buffer_manager=buffer_manager,
@@ -76,8 +76,46 @@ def test_stream_sync_matcher_deduplicates_same_frame_combination():
 
     assert matcher.try_match(second) is not None
     assert matcher.try_match(first) is None
-    assert matcher.status()["duplicate_count"] == 1
-    assert matcher.status()["last_reason"] == "duplicate frame set"
+    status = matcher.status()
+    assert status["matched_count"] == 1
+    assert status["missed_count"] == 1
+    assert status["last_missing_cameras"] == ["camera1", "camera2"]
+    assert status["last_reason"] == "missing cameras inside sync window"
+
+
+def test_stream_sync_matcher_does_not_reuse_matched_frames():
+    buffer_manager = SyncFrameBufferManager(buffer_size=120)
+    matcher = SyncMatcher(
+        buffer_manager=buffer_manager,
+        expected_cameras=["camera1", "camera2"],
+        window_ms=50,
+    )
+    camera1_first = buffer_manager.add_frame(make_frame(1, "camera1", 1000, 1))
+    camera2_first = buffer_manager.add_frame(make_frame(2, "camera2", 1010, 1))
+    camera2_second = buffer_manager.add_frame(make_frame(3, "camera2", 1020, 2))
+
+    first_match = matcher.try_match(camera2_first)
+    second_match = matcher.try_match(camera2_second)
+
+    assert first_match is not None
+    assert set(
+        frame.frame_id for frame in first_match.frames.values()
+    ) == {1, 2}
+    assert second_match is None
+    status = matcher.status()
+    assert status["matched_count"] == 1
+    assert status["missed_count"] == 1
+    assert status["last_missing_cameras"] == ["camera1"]
+    assert status["last_reason"] == "missing cameras inside sync window"
+
+    camera1_second = buffer_manager.add_frame(make_frame(4, "camera1", 1025, 2))
+    third_match = matcher.try_match(camera1_second)
+
+    assert third_match is not None
+    assert set(
+        frame.frame_id for frame in third_match.frames.values()
+    ) == {3, 4}
+    assert matcher.status()["matched_count"] == 2
 
 
 def test_stream_sync_service_ignores_duplicate_registered_frame_id():

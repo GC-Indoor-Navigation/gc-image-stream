@@ -346,15 +346,20 @@ DEBUG_VIEWER_HTML = """<!doctype html>
     }
 
     function renderIngest(status) {
+      const expected = (status.expected_device_ids || []).join(", ") || status.expected_device_count || "-";
       const observed = (status.observed_device_ids || []).join(", ") || "-";
+      const missing = (status.missing_device_ids || []).join(", ") || "-";
+      const unexpected = (status.unexpected_device_ids || []).join(", ") || "-";
       ingestStatus.innerHTML = [
         metric("Enabled", status.enabled ? "true" : "false", status.enabled ? "ok" : ""),
         metric("Running", status.running ? "true" : "false", status.running ? "ok" : "warn"),
         metric("Bind", status.bind),
         metric("Gate Enabled", status.gate_enabled ? "true" : "false", status.gate_enabled ? "ok" : ""),
         metric("Gate Open", status.gate_open ? "true" : "false", status.gate_open ? "ok" : "warn"),
-        metric("Expected", status.expected_device_count ?? "-"),
+        metric("Expected", expected),
         metric("Observed", observed),
+        metric("Missing", missing, missing === "-" ? "ok" : "warn"),
+        metric("Unexpected", unexpected, unexpected === "-" ? "ok" : "warn"),
       ].join("");
     }
 

@@ -144,7 +144,7 @@ async def startup_application():
         grpc_ingest_service.configure(
             bind=GRPC_INGEST_BIND,
             enabled=True,
-            expected_device_count=len(grpc_camera_configs),
+            expected_device_ids=[config.device_id for config in grpc_camera_configs],
         )
         grpc_ingest_service.start()
         logger.info(

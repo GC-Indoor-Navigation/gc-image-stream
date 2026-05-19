@@ -92,6 +92,7 @@ class GrpcIngestService:
         self.runtime_server = None
         self.runtime_bind = ""
         self.expected_device_count: int | None = None
+        self.expected_device_ids: set[str] = set()
         self.gate_open = True
         self.observed_device_ids: set[str] = set()
         self.gate_lock = Lock()
@@ -105,13 +106,25 @@ class GrpcIngestService:
         bind: str,
         enabled: bool = True,
         expected_device_count: int | None = None,
+        expected_device_ids: Iterable[str] | None = None,
     ):
+        normalized_expected_ids = {
+            device_id.strip()
+            for device_id in (expected_device_ids or [])
+            if device_id and device_id.strip()
+        }
         self.bind = bind
         self.enabled = enabled
-        self.expected_device_count = (
-            expected_device_count if expected_device_count and expected_device_count > 1 else None
-        )
-        self.gate_open = self.expected_device_count is None
+        self.expected_device_ids = normalized_expected_ids
+        if self.expected_device_ids:
+            self.expected_device_count = (
+                len(self.expected_device_ids) if len(self.expected_device_ids) > 1 else None
+            )
+        else:
+            self.expected_device_count = (
+                expected_device_count if expected_device_count and expected_device_count > 1 else None
+            )
+        self.gate_open = not self._gate_enabled()
         self.observed_device_ids = set()
 
     def start(self):
@@ -148,23 +161,43 @@ class GrpcIngestService:
         self.runtime_bind = ""
 
     def status(self):
+        expected_device_ids = sorted(self.expected_device_ids)
+        missing_device_ids = sorted(self.expected_device_ids - self.observed_device_ids)
+        unexpected_device_ids = sorted(self.observed_device_ids - self.expected_device_ids)
         return {
             "enabled": self.enabled,
             "bind": self.runtime_bind or self.bind,
             "running": self.runtime_server is not None,
-            "gate_enabled": self.expected_device_count is not None,
+            "gate_enabled": self._gate_enabled(),
             "gate_open": self.gate_open,
             "expected_device_count": self.expected_device_count,
+            "expected_device_ids": expected_device_ids,
             "observed_device_ids": sorted(self.observed_device_ids),
+            "missing_device_ids": missing_device_ids,
+            "unexpected_device_ids": unexpected_device_ids if self.expected_device_ids else [],
         }
+
+    def _gate_enabled(self) -> bool:
+        return self.expected_device_count is not None
 
     def _allow_ingest(self, device_id: str) -> bool:
         with self.gate_lock:
+            self.observed_device_ids.add(device_id)
+
+            if self.expected_device_ids and device_id not in self.expected_device_ids:
+                return False
+
             if self.gate_open:
-                self.observed_device_ids.add(device_id)
                 return True
 
-            self.observed_device_ids.add(device_id)
+            if self.expected_device_ids:
+                expected_devices_seen = self.expected_device_ids.issubset(
+                    self.observed_device_ids
+                )
+                if expected_devices_seen:
+                    self.gate_open = True
+                return False
+
             if len(self.observed_device_ids) >= (self.expected_device_count or 0):
                 self.gate_open = True
             return False

@@ -157,7 +157,7 @@ def test_monitoring_grpc_ingest_returns_gate_status(client):
     grpc_ingest_service.configure(
         bind="0.0.0.0:50052",
         enabled=True,
-        expected_device_count=3,
+        expected_device_ids=["android_01", "android_02", "android_03"],
     )
 
     response = client.get("/monitoring/grpc-ingest")
@@ -169,7 +169,9 @@ def test_monitoring_grpc_ingest_returns_gate_status(client):
     assert body["gate_enabled"] is True
     assert body["gate_open"] is False
     assert body["expected_device_count"] == 3
+    assert body["expected_device_ids"] == ["android_01", "android_02", "android_03"]
     assert body["observed_device_ids"] == []
+    assert body["missing_device_ids"] == ["android_01", "android_02", "android_03"]
 
 
 def test_monitoring_events_returns_sse_snapshot(client, session_factory):

@@ -454,3 +454,109 @@ def test_grpc_ingest_service_drops_pre_gate_frames_until_all_devices_are_seen(
     assert service.status()["gate_enabled"] is True
     assert service.status()["gate_open"] is True
     assert service.status()["observed_device_ids"] == ["android_01", "android_02"]
+
+
+def test_grpc_ingest_service_gates_by_expected_device_ids(
+    session_factory,
+    tmp_path,
+):
+    captured_calls: list[dict] = []
+
+    def fake_ingest_func(db, **kwargs):
+        captured_calls.append(kwargs)
+        frame_path = tmp_path / kwargs["filename"]
+        frame_path.write_bytes(kwargs["image_bytes"])
+        return {
+            "frame": Frame(
+                id=len(captured_calls),
+                device_id=kwargs["device_id"],
+                timestamp=kwargs["timestamp_ms"],
+                file_path=str(frame_path),
+            ),
+            "camera_state": None,
+            "relay_enqueued": False,
+        }
+
+    service = GrpcIngestService(
+        db_factory=session_factory,
+        ingest_func=fake_ingest_func,
+        state=StreamState(),
+        relay_service=ProcessingRelayService(),
+    )
+    service.configure(
+        bind="127.0.0.1:0",
+        enabled=True,
+        expected_device_ids=["android_01", "android_02"],
+    )
+
+    response = service._stream_frames(
+        iter(
+            [
+                FramePacket(
+                    metadata=FrameMetadata(
+                        camera_id="camera_99",
+                        device_id="unexpected_android",
+                        frame_sequence=1,
+                        device_timestamp_ms=900,
+                        format="jpeg",
+                    ),
+                    jpeg=b"drop-unexpected",
+                ),
+                FramePacket(
+                    metadata=FrameMetadata(
+                        camera_id="camera_01",
+                        device_id="android_01",
+                        frame_sequence=1,
+                        device_timestamp_ms=1_000,
+                        format="jpeg",
+                    ),
+                    jpeg=b"drop-before-all-expected",
+                ),
+                FramePacket(
+                    metadata=FrameMetadata(
+                        camera_id="camera_02",
+                        device_id="android_02",
+                        frame_sequence=1,
+                        device_timestamp_ms=1_100,
+                        format="jpeg",
+                    ),
+                    jpeg=b"drop-open-gate",
+                ),
+                FramePacket(
+                    metadata=FrameMetadata(
+                        camera_id="camera_01",
+                        device_id="android_01",
+                        frame_sequence=2,
+                        device_timestamp_ms=1_200,
+                        format="jpeg",
+                    ),
+                    jpeg=b"keep-1",
+                ),
+                FramePacket(
+                    metadata=FrameMetadata(
+                        camera_id="camera_02",
+                        device_id="android_02",
+                        frame_sequence=2,
+                        device_timestamp_ms=1_300,
+                        format="jpeg",
+                    ),
+                    jpeg=b"keep-2",
+                ),
+            ]
+        ),
+        context=None,
+    )
+
+    assert response.received_frames == 2
+    assert [call["device_id"] for call in captured_calls] == [
+        "android_01",
+        "android_02",
+    ]
+    assert [call["sequence"] for call in captured_calls] == [2, 2]
+    assert [call["image_bytes"] for call in captured_calls] == [b"keep-1", b"keep-2"]
+    assert service.status()["gate_enabled"] is True
+    assert service.status()["gate_open"] is True
+    assert service.status()["expected_device_count"] == 2
+    assert service.status()["expected_device_ids"] == ["android_01", "android_02"]
+    assert service.status()["missing_device_ids"] == []
+    assert service.status()["unexpected_device_ids"] == ["unexpected_android"]

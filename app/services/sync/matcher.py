@@ -18,6 +18,7 @@ class SyncMatcher:
         self.recent_limit = recent_limit
         self._next_frame_set_id = 1
         self._emitted_keys: set[tuple[int, ...]] = set()
+        self._used_frame_ids: set[int] = set()
         self._recent_frame_sets: deque[SynchronizedFrameSet] = deque(
             maxlen=recent_limit
         )
@@ -53,6 +54,7 @@ class SyncMatcher:
                 device_id=device_id,
                 anchor_timestamp_ms=anchor_frame.timestamp_ms,
                 window_ms=self.window_ms,
+                exclude_frame_ids=self._used_frame_ids,
             )
             if frame is None:
                 missing_cameras.append(device_id)
@@ -74,6 +76,7 @@ class SyncMatcher:
             self.last_reason = "duplicate frame set"
             return None
         self._emitted_keys.add(key)
+        self._used_frame_ids.update(key)
 
         max_delta_ms = max(
             abs(frame.timestamp_ms - anchor_frame.timestamp_ms)

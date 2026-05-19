@@ -30,10 +30,14 @@ class CameraSyncBuffer:
         self,
         anchor_timestamp_ms: int,
         window_ms: int,
+        exclude_frame_ids: set[int] | None = None,
     ) -> StoredSyncFrame | None:
+        excluded = exclude_frame_ids or set()
         nearest: StoredSyncFrame | None = None
         nearest_delta: int | None = None
         for frame in self.frames:
+            if frame.frame_id in excluded:
+                continue
             delta = abs(frame.timestamp_ms - anchor_timestamp_ms)
             if delta <= window_ms and (
                 nearest_delta is None or delta < nearest_delta
@@ -93,12 +97,17 @@ class SyncFrameBufferManager:
         device_id: str,
         anchor_timestamp_ms: int,
         window_ms: int,
+        exclude_frame_ids: set[int] | None = None,
     ) -> StoredSyncFrame | None:
         with self._lock:
             buffer = self._buffers.get(device_id)
             if buffer is None:
                 return None
-            return buffer.nearest_frame(anchor_timestamp_ms, window_ms)
+            return buffer.nearest_frame(
+                anchor_timestamp_ms,
+                window_ms,
+                exclude_frame_ids=exclude_frame_ids,
+            )
 
     def snapshot(self) -> dict:
         with self._lock:

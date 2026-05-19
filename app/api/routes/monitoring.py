@@ -340,15 +340,20 @@ MONITORING_VIEWER_HTML = """<!doctype html>
     }
 
     function renderIngest(ingest) {
+      const expected = (ingest.expected_device_ids || []).join(", ") || ingest.expected_device_count || "-";
       const observed = (ingest.observed_device_ids || []).join(", ") || "-";
+      const missing = (ingest.missing_device_ids || []).join(", ") || "-";
+      const unexpected = (ingest.unexpected_device_ids || []).join(", ") || "-";
       ingestGrid.innerHTML = [
         relayCard("Enabled", ingest.enabled ? "true" : "false", ingest.enabled ? "healthy" : ""),
         relayCard("Running", ingest.running ? "true" : "false", ingest.running ? "healthy" : "stale"),
         relayCard("Bind", ingest.bind || "-"),
         relayCard("Gate Enabled", ingest.gate_enabled ? "true" : "false", ingest.gate_enabled ? "healthy" : ""),
         relayCard("Gate Open", ingest.gate_open ? "true" : "false", ingest.gate_open ? "healthy" : "stale"),
-        relayCard("Expected Devices", ingest.expected_device_count ?? "-"),
+        relayCard("Expected Devices", expected),
         relayCard("Observed Devices", observed),
+        relayCard("Missing Devices", missing, missing === "-" ? "healthy" : "stale"),
+        relayCard("Unexpected Devices", unexpected, unexpected === "-" ? "healthy" : "stale"),
       ].join("");
     }
 
