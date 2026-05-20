@@ -334,9 +334,19 @@ def build_summary(
 ):
     max_deltas = [item["max_delta_ms"] for item in matched_frame_sets]
     matched_count = len(matched_frame_sets)
-    matched_ratio = (
+    largest_camera_ratio = (
         matched_count / max(per_camera_counts.values())
         if per_camera_counts
+        else 0.0
+    )
+    overlap_sync_opportunity_count = (
+        min(per_camera_counts.values())
+        if per_camera_counts
+        else 0
+    )
+    matched_ratio_in_overlap = (
+        matched_count / overlap_sync_opportunity_count
+        if overlap_sync_opportunity_count > 0
         else 0.0
     )
     return {
@@ -357,7 +367,9 @@ def build_summary(
         "non_image_files": non_image_files,
         "timestamp_ranges": timestamp_ranges,
         "matched_frame_set_count": matched_count,
-        "matched_ratio_vs_largest_camera": matched_ratio,
+        "overlap_sync_opportunity_count": overlap_sync_opportunity_count,
+        "matched_ratio_in_overlap": matched_ratio_in_overlap,
+        "matched_ratio_vs_largest_camera": largest_camera_ratio,
         "missed_count": status["missed_count"],
         "duplicate_count": status["duplicate_count"],
         "ignored_count": status["ignored_count"],
@@ -466,6 +478,8 @@ def main():
     print(f"trim_overlap: {args.trim_overlap}")
     print(f"overlap: {overlap or {'enabled': False}}")
     print(f"matched_frame_sets: {summary['matched_frame_set_count']}")
+    print(f"overlap_sync_opportunity_count: {summary['overlap_sync_opportunity_count']}")
+    print(f"matched_ratio_in_overlap: {summary['matched_ratio_in_overlap']:.4f}")
     print(f"missed_count: {summary['missed_count']}")
     print(f"duplicate_count: {summary['duplicate_count']}")
     print(f"ignored_count: {summary['ignored_count']}")
