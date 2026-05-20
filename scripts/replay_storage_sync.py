@@ -6,6 +6,7 @@ import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime
+from itertools import combinations
 from pathlib import Path
 from statistics import mean
 
@@ -384,6 +385,103 @@ def build_summary(
     }
 
 
+def build_replay_summary(
+    *,
+    frames: list[ReplayFrame],
+    expected_cameras: list[str],
+    window_ms: int,
+    buffer_size: int,
+    recent_limit: int,
+    timestamp_align: str,
+    trim_overlap: bool,
+    overlap: dict | None,
+    per_camera_counts: dict[str, int],
+    original_per_camera_counts: dict[str, int],
+    skipped_image_files: int,
+    non_image_files: int,
+    timestamp_ranges: dict[str, dict],
+):
+    status, matched_frame_sets, missed_frames = replay_frames(
+        frames=frames,
+        expected_cameras=expected_cameras,
+        window_ms=window_ms,
+        buffer_size=buffer_size,
+        recent_limit=recent_limit,
+    )
+    summary = build_summary(
+        expected_cameras=expected_cameras,
+        window_ms=window_ms,
+        buffer_size=buffer_size,
+        timestamp_align=timestamp_align,
+        trim_overlap=trim_overlap,
+        overlap=overlap,
+        per_camera_counts=per_camera_counts,
+        original_per_camera_counts=original_per_camera_counts,
+        skipped_image_files=skipped_image_files,
+        non_image_files=non_image_files,
+        input_frame_count=len(frames),
+        timestamp_ranges=timestamp_ranges,
+        status=status,
+        matched_frame_sets=matched_frame_sets,
+    )
+    return summary, matched_frame_sets, missed_frames
+
+
+def build_pairwise_summaries(
+    *,
+    frames: list[ReplayFrame],
+    expected_cameras: list[str],
+    window_ms: int,
+    buffer_size: int,
+    recent_limit: int,
+    timestamp_align: str,
+    trim_overlap: bool,
+    overlap: dict | None,
+    per_camera_counts: dict[str, int],
+    original_per_camera_counts: dict[str, int],
+    skipped_image_files: int,
+    non_image_files: int,
+):
+    pairwise = []
+    for camera_pair in combinations(expected_cameras, 2):
+        pair = list(camera_pair)
+        pair_frames = [
+            frame
+            for frame in frames
+            if frame.device_id in pair
+        ]
+        pair_per_camera_counts = {
+            device_id: per_camera_counts.get(device_id, 0)
+            for device_id in pair
+        }
+        pair_original_per_camera_counts = {
+            device_id: original_per_camera_counts.get(device_id, 0)
+            for device_id in pair
+        }
+        pair_summary, _, _ = build_replay_summary(
+            frames=pair_frames,
+            expected_cameras=pair,
+            window_ms=window_ms,
+            buffer_size=buffer_size,
+            recent_limit=recent_limit,
+            timestamp_align=timestamp_align,
+            trim_overlap=trim_overlap,
+            overlap=overlap,
+            per_camera_counts=pair_per_camera_counts,
+            original_per_camera_counts=pair_original_per_camera_counts,
+            skipped_image_files=skipped_image_files,
+            non_image_files=non_image_files,
+            timestamp_ranges=build_timestamp_ranges(pair_frames),
+        )
+        pairwise.append(
+            {
+                "cameras": pair,
+                **pair_summary,
+            }
+        )
+    return pairwise
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Replay stored camera images through the Stream sync matcher."
@@ -408,6 +506,11 @@ def parse_args():
         "--trim-overlap",
         action="store_true",
         help="Use only the common absolute timestamp range across all camera folders.",
+    )
+    parser.add_argument(
+        "--pairwise",
+        action="store_true",
+        help="Also replay every 2-camera combination and write pairwise_summary.json.",
     )
     parser.add_argument(
         "--output-dir",
@@ -438,17 +541,12 @@ def main():
     timestamp_ranges = build_timestamp_ranges(frames)
     output_dir = build_output_dir(Path(args.output_dir), args.run_id)
 
-    status, matched_frame_sets, missed_frames = replay_frames(
+    summary, matched_frame_sets, missed_frames = build_replay_summary(
         frames=frames,
         expected_cameras=expected_cameras,
         window_ms=args.window_ms,
         buffer_size=args.buffer_size,
         recent_limit=args.recent_limit,
-    )
-    summary = build_summary(
-        expected_cameras=expected_cameras,
-        window_ms=args.window_ms,
-        buffer_size=args.buffer_size,
         timestamp_align=args.timestamp_align,
         trim_overlap=args.trim_overlap,
         overlap=overlap,
@@ -456,10 +554,7 @@ def main():
         original_per_camera_counts=original_per_camera_counts,
         skipped_image_files=skipped_image_files,
         non_image_files=non_image_files,
-        input_frame_count=len(frames),
         timestamp_ranges=timestamp_ranges,
-        status=status,
-        matched_frame_sets=matched_frame_sets,
     )
 
     (output_dir / "summary.json").write_text(
@@ -468,6 +563,26 @@ def main():
     )
     write_jsonl(output_dir / "matched_frame_sets.jsonl", matched_frame_sets)
     write_jsonl(output_dir / "missed_frames.jsonl", missed_frames)
+    pairwise_summaries = []
+    if args.pairwise:
+        pairwise_summaries = build_pairwise_summaries(
+            frames=frames,
+            expected_cameras=expected_cameras,
+            window_ms=args.window_ms,
+            buffer_size=args.buffer_size,
+            recent_limit=args.recent_limit,
+            timestamp_align=args.timestamp_align,
+            trim_overlap=args.trim_overlap,
+            overlap=overlap,
+            per_camera_counts=per_camera_counts,
+            original_per_camera_counts=original_per_camera_counts,
+            skipped_image_files=skipped_image_files,
+            non_image_files=non_image_files,
+        )
+        (output_dir / "pairwise_summary.json").write_text(
+            json.dumps(pairwise_summaries, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
     print(f"output_dir: {output_dir}")
     print(f"expected_cameras: {','.join(expected_cameras)}")
@@ -485,6 +600,17 @@ def main():
     print(f"ignored_count: {summary['ignored_count']}")
     print(f"matched_ratio_vs_largest_camera: {summary['matched_ratio_vs_largest_camera']:.4f}")
     print(f"max_delta_ms: {summary['max_delta_ms']}")
+    if pairwise_summaries:
+        print("pairwise:")
+        for item in pairwise_summaries:
+            print(
+                "  "
+                + ",".join(item["cameras"])
+                + f": matched={item['matched_frame_set_count']} "
+                + f"opportunity={item['overlap_sync_opportunity_count']} "
+                + f"ratio={item['matched_ratio_in_overlap']:.4f} "
+                + f"p95_delta={item['max_delta_ms']['p95']}"
+            )
 
 
 if __name__ == "__main__":
