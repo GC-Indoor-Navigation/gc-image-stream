@@ -49,7 +49,9 @@ def serialize_camera_state(
         "last_received_at": latest.received_at_ms if latest is not None else None,
         "last_received_age_ms": last_received_age_ms,
         "sequence_gap_count": camera.sequence_gap_count,
-        "estimated_fps": estimate_fps(camera, now_ms=current_ms),
+        "estimated_fps": estimate_capture_fps(camera, now_ms=current_ms),
+        "estimated_capture_fps": estimate_capture_fps(camera, now_ms=current_ms),
+        "estimated_ingest_fps": estimate_ingest_fps(camera, now_ms=current_ms),
     }
 
 
@@ -70,17 +72,45 @@ def estimate_fps(
     now_ms: int | None = None,
     window_ms: int = 30_000,
 ) -> float:
+    return estimate_capture_fps(camera, now_ms=now_ms, window_ms=window_ms)
+
+
+def estimate_capture_fps(
+    camera: CameraStreamState,
+    now_ms: int | None = None,
+    window_ms: int = 30_000,
+) -> float:
+    if not camera.recent_timestamps_ms:
+        return 0.0
+    latest_timestamp_ms = camera.recent_timestamps_ms[-1]
+    recent_timestamps = [
+        timestamp
+        for timestamp in camera.recent_timestamps_ms
+        if latest_timestamp_ms - timestamp <= window_ms
+    ]
+    return estimate_rate(recent_timestamps)
+
+
+def estimate_ingest_fps(
+    camera: CameraStreamState,
+    now_ms: int | None = None,
+    window_ms: int = 30_000,
+) -> float:
     current_ms = now_ms if now_ms is not None else current_time_ms()
     recent = [
         received_at
         for received_at in camera.recent_received_at_ms
         if current_ms - received_at <= window_ms
     ]
-    if len(recent) < 2:
+    return estimate_rate(recent)
+
+
+def estimate_rate(timestamps_ms: list[int]) -> float:
+    if len(timestamps_ms) < 2:
         return 0.0
 
-    elapsed_ms = max(recent[-1] - recent[0], 1)
-    return (len(recent) - 1) * 1000 / elapsed_ms
+    elapsed_ms = max(timestamps_ms[-1] - timestamps_ms[0], 1)
+    return (len(timestamps_ms) - 1) * 1000 / elapsed_ms
 
 
 def get_latest_frame_from_db(db, device_id: str) -> Frame | None:

@@ -246,7 +246,8 @@ MONITORING_VIEWER_HTML = """<!doctype html>
             <tr>
               <th>Camera</th>
               <th>Status</th>
-              <th>FPS</th>
+              <th>Capture FPS</th>
+              <th>Ingest FPS</th>
               <th>Frames</th>
               <th>Last Timestamp</th>
               <th>Age</th>
@@ -300,13 +301,15 @@ MONITORING_VIEWER_HTML = """<!doctype html>
       const healthy = cameras.filter((camera) => camera.status === "healthy").length;
       const stale = cameras.filter((camera) => camera.status === "stale").length;
       const disconnected = cameras.filter((camera) => camera.status === "disconnected").length;
-      const totalFps = cameras.reduce((sum, camera) => sum + Number(camera.estimated_fps || 0), 0);
+      const totalFps = cameras.reduce((sum, camera) => sum + Number(camera.estimated_capture_fps || camera.estimated_fps || 0), 0);
+      const totalIngestFps = cameras.reduce((sum, camera) => sum + Number(camera.estimated_ingest_fps || 0), 0);
       summaryGrid.innerHTML = [
         summaryCard("Cameras", cameras.length),
         summaryCard("Healthy", healthy),
         summaryCard("Stale", stale, stale > 0 ? "stale" : "healthy"),
         summaryCard("Disconnected", disconnected, disconnected > 0 ? "disconnected" : "healthy"),
-        summaryCard("Total FPS", totalFps.toFixed(2)),
+        summaryCard("Capture FPS", totalFps.toFixed(2)),
+        summaryCard("Ingest FPS", totalIngestFps.toFixed(2)),
         summaryCard("Relay Queue", relay.queue_size),
       ].join("");
     }
@@ -382,14 +385,15 @@ MONITORING_VIEWER_HTML = """<!doctype html>
 
     function renderCameras(cameras) {
       if (cameras.length === 0) {
-        cameraTable.innerHTML = '<tr><td colspan="8" class="meta">No camera state</td></tr>';
+        cameraTable.innerHTML = '<tr><td colspan="9" class="meta">No camera state</td></tr>';
         return;
       }
       cameraTable.innerHTML = cameras.map((camera) => `
         <tr>
           <td><a href="/debug/viewer">${escapeHtml(camera.device_id)}</a></td>
           <td><span class="status ${statusClass(camera.status)}">${escapeHtml(camera.status)}</span></td>
-          <td>${escapeHtml(Number(camera.estimated_fps || 0).toFixed(2))}</td>
+          <td>${escapeHtml(Number(camera.estimated_capture_fps || camera.estimated_fps || 0).toFixed(2))}</td>
+          <td>${escapeHtml(Number(camera.estimated_ingest_fps || 0).toFixed(2))}</td>
           <td>${escapeHtml(camera.frame_count)}</td>
           <td>${escapeHtml(camera.latest_timestamp)}</td>
           <td>${escapeHtml(formatAge(camera.last_received_age_ms))}</td>

@@ -32,6 +32,8 @@ def test_stream_state_tracks_latest_frame_and_sequence_gap():
     assert camera.latest_frame is not None
     assert camera.latest_frame.frame_id == 2
     assert camera.latest_frame.timestamp == 1100
+    assert list(camera.recent_timestamps_ms) == [1000, 1100]
+    assert list(camera.recent_received_at_ms) == [10_000, 10_100]
 
 
 def test_stream_state_lists_cameras():

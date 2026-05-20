@@ -280,7 +280,7 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       }
       cameraList.innerHTML = cameras.map((camera) => {
         const active = camera.device_id === selectedDeviceId ? " active" : "";
-        const fps = Number(camera.estimated_fps || 0).toFixed(2);
+        const fps = Number(camera.estimated_capture_fps || camera.estimated_fps || 0).toFixed(2);
         return `
           <button class="camera-row${active}" data-device-id="${escapeHtml(camera.device_id)}" type="button">
             <span class="camera-name">${escapeHtml(camera.device_id)}</span>
@@ -325,7 +325,8 @@ DEBUG_VIEWER_HTML = """<!doctype html>
         metric("Sequence", camera.latest_sequence),
         metric("Age", formatAge(camera.last_received_age_ms), camera.last_received_age_ms > 3000 ? "warn" : "ok"),
         metric("Bytes", camera.latest_image_bytes),
-        metric("FPS", Number(camera.estimated_fps || 0).toFixed(2)),
+        metric("Capture FPS", Number(camera.estimated_capture_fps || camera.estimated_fps || 0).toFixed(2)),
+        metric("Ingest FPS", Number(camera.estimated_ingest_fps || 0).toFixed(2)),
         metric("Frames", camera.frame_count),
         metric("Gaps", camera.sequence_gap_count, camera.sequence_gap_count > 0 ? "warn" : "ok"),
         metric("Frame ID", camera.latest_frame_id),

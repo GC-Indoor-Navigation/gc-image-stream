@@ -23,6 +23,7 @@ class CameraStreamState:
     frame_count: int = 0
     sequence_gap_count: int = 0
     last_sequence: int | None = None
+    recent_timestamps_ms: deque[int] = field(default_factory=lambda: deque(maxlen=300))
     recent_received_at_ms: deque[int] = field(default_factory=lambda: deque(maxlen=300))
 
 
@@ -61,6 +62,7 @@ class StreamState:
                 camera.last_sequence = sequence
 
             camera.frame_count += 1
+            camera.recent_timestamps_ms.append(timestamp)
             camera.recent_received_at_ms.append(now_ms)
             camera.latest_frame = StreamFrameState(
                 frame_id=frame_id,
@@ -105,6 +107,10 @@ def copy_camera_state(camera: CameraStreamState) -> CameraStreamState:
     copied.recent_received_at_ms = deque(
         camera.recent_received_at_ms,
         maxlen=camera.recent_received_at_ms.maxlen,
+    )
+    copied.recent_timestamps_ms = deque(
+        camera.recent_timestamps_ms,
+        maxlen=camera.recent_timestamps_ms.maxlen,
     )
     return copied
 
