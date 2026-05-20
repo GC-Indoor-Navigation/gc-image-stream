@@ -8,6 +8,7 @@ from app.core.env import (
 )
 from app.core.relay import (
     STREAM_RELAY_MODE_FRAME_SET,
+    STREAM_RELAY_MODE_OFF,
     STREAM_RELAY_MODE_RAW,
     resolve_stream_relay_mode,
 )
@@ -28,29 +29,34 @@ STREAM_RELAY_MODE = resolve_stream_relay_mode(
 )
 STREAM_RELAY_ENABLED = STREAM_RELAY_MODE == STREAM_RELAY_MODE_RAW
 STREAM_FRAME_SET_RELAY_ENABLED = STREAM_RELAY_MODE == STREAM_RELAY_MODE_FRAME_SET
+_stream_relay_target = get_optional_str_env("STREAM_RELAY_TARGET")
+_legacy_stream_frame_set_relay_target = get_optional_str_env(
+    "STREAM_FRAME_SET_RELAY_TARGET"
+)
 STREAM_RELAY_TARGET = (
-    get_required_env("STREAM_RELAY_TARGET")
-    if STREAM_RELAY_ENABLED
-    else get_optional_str_env("STREAM_RELAY_TARGET")
+    _stream_relay_target
+    or (
+        _legacy_stream_frame_set_relay_target
+        if STREAM_FRAME_SET_RELAY_ENABLED
+        else ""
+    )
 )
+if STREAM_RELAY_MODE != STREAM_RELAY_MODE_OFF and not STREAM_RELAY_TARGET:
+    raise RuntimeError("STREAM_RELAY_TARGET is required when STREAM_RELAY_MODE is raw or frame_set")
 _stream_relay_timeout_sec = get_optional_float_env("STREAM_RELAY_TIMEOUT_SEC", 0.0)
-STREAM_RELAY_TIMEOUT_SEC = (
-    _stream_relay_timeout_sec
-    if _stream_relay_timeout_sec > 0
-    else None
-)
-STREAM_FRAME_SET_RELAY_TARGET = (
-    get_required_env("STREAM_FRAME_SET_RELAY_TARGET")
-    if STREAM_FRAME_SET_RELAY_ENABLED
-    else get_optional_str_env("STREAM_FRAME_SET_RELAY_TARGET")
-)
-_stream_frame_set_relay_timeout_sec = get_optional_float_env(
+_legacy_stream_frame_set_relay_timeout_sec = get_optional_float_env(
     "STREAM_FRAME_SET_RELAY_TIMEOUT_SEC",
     0.0,
 )
-STREAM_FRAME_SET_RELAY_TIMEOUT_SEC = (
-    _stream_frame_set_relay_timeout_sec
-    if _stream_frame_set_relay_timeout_sec > 0
+if (
+    _stream_relay_timeout_sec <= 0
+    and STREAM_FRAME_SET_RELAY_ENABLED
+    and _legacy_stream_frame_set_relay_timeout_sec > 0
+):
+    _stream_relay_timeout_sec = _legacy_stream_frame_set_relay_timeout_sec
+STREAM_RELAY_TIMEOUT_SEC = (
+    _stream_relay_timeout_sec
+    if _stream_relay_timeout_sec > 0
     else None
 )
 STREAM_SYNC_ENABLED = get_optional_bool_env("STREAM_SYNC_ENABLED", False)

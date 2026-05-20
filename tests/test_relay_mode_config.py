@@ -54,3 +54,38 @@ def test_resolve_stream_relay_mode_rejects_invalid_mode():
             raw_relay_enabled=False,
             frame_set_relay_enabled=False,
         )
+
+
+def test_server_config_uses_common_relay_target_for_frame_set_mode(monkeypatch):
+    from importlib import reload
+
+    import app.core.server as server
+
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///./frames.db")
+    monkeypatch.setenv("STORAGE_DIR", "storage")
+    monkeypatch.setenv("STREAM_RELAY_MODE", "frame_set")
+    monkeypatch.setenv("STREAM_RELAY_TARGET", "127.0.0.1:50051")
+    monkeypatch.delenv("STREAM_FRAME_SET_RELAY_TARGET", raising=False)
+
+    reloaded = reload(server)
+
+    assert reloaded.STREAM_RELAY_MODE == "frame_set"
+    assert reloaded.STREAM_RELAY_ENABLED is False
+    assert reloaded.STREAM_FRAME_SET_RELAY_ENABLED is True
+    assert reloaded.STREAM_RELAY_TARGET == "127.0.0.1:50051"
+
+
+def test_server_config_falls_back_to_legacy_frame_set_target(monkeypatch):
+    from importlib import reload
+
+    import app.core.server as server
+
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///./frames.db")
+    monkeypatch.setenv("STORAGE_DIR", "storage")
+    monkeypatch.setenv("STREAM_RELAY_MODE", "frame_set")
+    monkeypatch.delenv("STREAM_RELAY_TARGET", raising=False)
+    monkeypatch.setenv("STREAM_FRAME_SET_RELAY_TARGET", "127.0.0.1:50052")
+
+    reloaded = reload(server)
+
+    assert reloaded.STREAM_RELAY_TARGET == "127.0.0.1:50052"

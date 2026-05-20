@@ -12,8 +12,6 @@ from app.core.server import (
     GRPC_INGEST_BIND,
     STORAGE_DIR,
     STREAM_FRAME_SET_RELAY_ENABLED,
-    STREAM_FRAME_SET_RELAY_TARGET,
-    STREAM_FRAME_SET_RELAY_TIMEOUT_SEC,
     STREAM_RELAY_ENABLED,
     STREAM_RELAY_MODE,
     STREAM_RELAY_TARGET,
@@ -51,10 +49,8 @@ def resolve_sync_expected_cameras(
 
 
 def resolve_selected_relay_target() -> str:
-    if STREAM_RELAY_ENABLED:
+    if STREAM_RELAY_ENABLED or STREAM_FRAME_SET_RELAY_ENABLED:
         return STREAM_RELAY_TARGET
-    if STREAM_FRAME_SET_RELAY_ENABLED:
-        return STREAM_FRAME_SET_RELAY_TARGET
     return ""
 
 
@@ -116,8 +112,8 @@ async def startup_application():
 
     if STREAM_FRAME_SET_RELAY_ENABLED:
         processing_frame_set_relay_service.configure(
-            target=STREAM_FRAME_SET_RELAY_TARGET,
-            timeout_sec=STREAM_FRAME_SET_RELAY_TIMEOUT_SEC,
+            target=STREAM_RELAY_TARGET,
+            timeout_sec=STREAM_RELAY_TIMEOUT_SEC,
             enabled=True,
         )
         processing_frame_set_relay_service.start()
@@ -125,13 +121,13 @@ async def startup_application():
             format_log_event(
                 "stream_frame_set_relay_started",
                 mode=STREAM_RELAY_MODE,
-                target=STREAM_FRAME_SET_RELAY_TARGET,
+                target=STREAM_RELAY_TARGET,
             )
         )
     else:
         processing_frame_set_relay_service.configure(
             target="",
-            timeout_sec=STREAM_FRAME_SET_RELAY_TIMEOUT_SEC,
+            timeout_sec=STREAM_RELAY_TIMEOUT_SEC,
             enabled=False,
         )
         logger.info(
