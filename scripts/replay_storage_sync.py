@@ -252,6 +252,66 @@ def write_jsonl(path: Path, items: list[dict]):
             file.write("\n")
 
 
+def progress_log(message: str):
+    print(f"[replay] {message}", flush=True)
+
+
+class ProgressBar:
+    def __init__(self, label: str, total: int, interval: int):
+        self.label = label
+        self.total = total
+        self.interval = interval
+        self.last_drawn = -1
+
+    def start(self, detail: str):
+        progress_log(f"{self.label} 시작: {detail}")
+        self.draw(0, matched=0, missed=0, ignored=0, force=True)
+
+    def draw(
+        self,
+        processed: int,
+        *,
+        matched: int,
+        missed: int,
+        ignored: int,
+        force: bool = False,
+    ):
+        if self.interval <= 0 and not force:
+            return
+        if not force and processed < self.total and processed % self.interval != 0:
+            return
+        if processed == self.last_drawn and not force:
+            return
+
+        self.last_drawn = processed
+        percent = 100 if self.total == 0 else int((processed / self.total) * 100)
+        filled = 0 if self.total == 0 else int((processed / self.total) * 30)
+        bar = "#" * filled + "-" * (30 - filled)
+        print(
+            "\r"
+            + f"[replay] {self.label} [{bar}] {percent:3d}% "
+            + f"{processed}/{self.total} "
+            + f"matched={matched} missed={missed} ignored={ignored}",
+            end="",
+            flush=True,
+        )
+
+    def finish(self, *, matched: int, missed: int, ignored: int):
+        if self.last_drawn != self.total:
+            self.draw(
+                self.total,
+                matched=matched,
+                missed=missed,
+                ignored=ignored,
+                force=True,
+            )
+        print("", flush=True)
+        progress_log(
+            f"{self.label} 완료: processed={self.total} "
+            f"matched={matched} missed={missed} ignored={ignored}"
+        )
+
+
 def build_output_dir(base_dir: Path, run_id: str | None) -> Path:
     resolved_run_id = run_id or datetime.now().strftime("storage-sync-replay-%Y%m%d-%H%M%S")
     output_dir = base_dir / resolved_run_id
@@ -265,6 +325,8 @@ def replay_frames(
     window_ms: int,
     buffer_size: int,
     recent_limit: int,
+    label: str,
+    progress_interval: int,
 ):
     service = StreamSyncService()
     service.configure(
@@ -281,7 +343,13 @@ def replay_frames(
         frame.frame_id: frame.original_timestamp_ms
         for frame in frames
     }
-    for frame in frames:
+    total_frames = len(frames)
+    progress_bar = ProgressBar(label=label, total=total_frames, interval=progress_interval)
+    progress_bar.start(
+        f"window={window_ms}ms frames={total_frames} "
+        f"cameras={','.join(expected_cameras)}"
+    )
+    for index, frame in enumerate(frames, start=1):
         result = service.handle_frame(
             SyncInputFrame(
                 frame_id=frame.frame_id,
@@ -313,7 +381,21 @@ def replay_frames(
                     }
                 )
 
-    return service.status(), matched_frame_sets, missed_frames
+        status = service.status()
+        progress_bar.draw(
+            index,
+            matched=len(matched_frame_sets),
+            missed=status["missed_count"],
+            ignored=status["ignored_count"],
+        )
+
+    status = service.status()
+    progress_bar.finish(
+        matched=len(matched_frame_sets),
+        missed=status["missed_count"],
+        ignored=status["ignored_count"],
+    )
+    return status, matched_frame_sets, missed_frames
 
 
 def build_summary(
@@ -335,9 +417,10 @@ def build_summary(
 ):
     max_deltas = [item["max_delta_ms"] for item in matched_frame_sets]
     matched_count = len(matched_frame_sets)
+    largest_camera_count = max(per_camera_counts.values()) if per_camera_counts else 0
     largest_camera_ratio = (
-        matched_count / max(per_camera_counts.values())
-        if per_camera_counts
+        matched_count / largest_camera_count
+        if largest_camera_count > 0
         else 0.0
     )
     overlap_sync_opportunity_count = (
@@ -400,6 +483,8 @@ def build_replay_summary(
     skipped_image_files: int,
     non_image_files: int,
     timestamp_ranges: dict[str, dict],
+    label: str,
+    progress_interval: int,
 ):
     status, matched_frame_sets, missed_frames = replay_frames(
         frames=frames,
@@ -407,6 +492,8 @@ def build_replay_summary(
         window_ms=window_ms,
         buffer_size=buffer_size,
         recent_limit=recent_limit,
+        label=label,
+        progress_interval=progress_interval,
     )
     summary = build_summary(
         expected_cameras=expected_cameras,
@@ -441,6 +528,8 @@ def build_pairwise_summaries(
     original_per_camera_counts: dict[str, int],
     skipped_image_files: int,
     non_image_files: int,
+    label_prefix: str,
+    progress_interval: int,
 ):
     pairwise = []
     for camera_pair in combinations(expected_cameras, 2):
@@ -472,6 +561,8 @@ def build_pairwise_summaries(
             skipped_image_files=skipped_image_files,
             non_image_files=non_image_files,
             timestamp_ranges=build_timestamp_ranges(pair_frames),
+            label=f"{label_prefix} { '+'.join(pair) }",
+            progress_interval=progress_interval,
         )
         pairwise.append(
             {
@@ -480,6 +571,101 @@ def build_pairwise_summaries(
             }
         )
     return pairwise
+
+
+def parse_window_sweep(raw_value: str | None) -> list[int]:
+    if raw_value is None or not raw_value.strip():
+        return []
+    windows = []
+    for raw_item in raw_value.split(","):
+        item = raw_item.strip()
+        if not item:
+            continue
+        window_ms = int(item)
+        if window_ms <= 0:
+            raise ValueError("--window-sweep values must be greater than 0")
+        windows.append(window_ms)
+    return list(dict.fromkeys(windows))
+
+
+def compact_summary(summary: dict) -> dict:
+    return {
+        "window_ms": summary["window_ms"],
+        "matched_frame_set_count": summary["matched_frame_set_count"],
+        "overlap_sync_opportunity_count": summary["overlap_sync_opportunity_count"],
+        "matched_ratio_in_overlap": summary["matched_ratio_in_overlap"],
+        "missed_count": summary["missed_count"],
+        "duplicate_count": summary["duplicate_count"],
+        "ignored_count": summary["ignored_count"],
+        "max_delta_ms": summary["max_delta_ms"],
+        "last_reason": summary["last_reason"],
+        "last_missing_cameras": summary["last_missing_cameras"],
+    }
+
+
+def build_window_sweep_summaries(
+    *,
+    windows_ms: list[int],
+    frames: list[ReplayFrame],
+    expected_cameras: list[str],
+    buffer_size: int,
+    recent_limit: int,
+    timestamp_align: str,
+    trim_overlap: bool,
+    overlap: dict | None,
+    per_camera_counts: dict[str, int],
+    original_per_camera_counts: dict[str, int],
+    skipped_image_files: int,
+    non_image_files: int,
+    timestamp_ranges: dict[str, dict],
+    include_pairwise: bool,
+    progress_interval: int,
+):
+    sweep = []
+    for window_ms in windows_ms:
+        summary, _, _ = build_replay_summary(
+            frames=frames,
+            expected_cameras=expected_cameras,
+            window_ms=window_ms,
+            buffer_size=buffer_size,
+            recent_limit=recent_limit,
+            timestamp_align=timestamp_align,
+            trim_overlap=trim_overlap,
+            overlap=overlap,
+            per_camera_counts=per_camera_counts,
+            original_per_camera_counts=original_per_camera_counts,
+            skipped_image_files=skipped_image_files,
+            non_image_files=non_image_files,
+            timestamp_ranges=timestamp_ranges,
+            label=f"window-sweep {window_ms}ms",
+            progress_interval=progress_interval,
+        )
+        item = compact_summary(summary)
+        if include_pairwise:
+            item["pairwise"] = [
+                {
+                    "cameras": pair_summary["cameras"],
+                    **compact_summary(pair_summary),
+                }
+                for pair_summary in build_pairwise_summaries(
+                    frames=frames,
+                    expected_cameras=expected_cameras,
+                    window_ms=window_ms,
+                    buffer_size=buffer_size,
+                    recent_limit=recent_limit,
+                    timestamp_align=timestamp_align,
+                    trim_overlap=trim_overlap,
+                    overlap=overlap,
+                    per_camera_counts=per_camera_counts,
+                    original_per_camera_counts=original_per_camera_counts,
+                    skipped_image_files=skipped_image_files,
+                    non_image_files=non_image_files,
+                    label_prefix=f"window-sweep {window_ms}ms pairwise",
+                    progress_interval=progress_interval,
+                )
+            ]
+        sweep.append(item)
+    return sweep
 
 
 def parse_args():
@@ -493,6 +679,11 @@ def parse_args():
         help="Camera mapping in the form device_id=folder_path.",
     )
     parser.add_argument("--window-ms", type=int, default=50)
+    parser.add_argument(
+        "--window-sweep",
+        default=None,
+        help="Comma-separated window values to compare, e.g. 30,50,75,100.",
+    )
     parser.add_argument("--buffer-size", type=int, default=120)
     parser.add_argument("--recent-limit", type=int, default=20)
     parser.add_argument("--limit-per-camera", type=int, default=None)
@@ -517,12 +708,19 @@ def parse_args():
         default=str(ROOT_DIR / "experiment_logs"),
         help="Base output directory for replay artifacts.",
     )
+    parser.add_argument(
+        "--progress-interval",
+        type=int,
+        default=1000,
+        help="Redraw the console progress bar every N replayed frames. Use 0 to show only start/end.",
+    )
     parser.add_argument("--run-id", default=None)
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    window_sweep = parse_window_sweep(args.window_sweep)
     camera_mappings = [parse_camera_mapping(raw) for raw in args.camera]
     expected_cameras = [device_id for device_id, _ in camera_mappings]
     (
@@ -540,6 +738,11 @@ def main():
     )
     timestamp_ranges = build_timestamp_ranges(frames)
     output_dir = build_output_dir(Path(args.output_dir), args.run_id)
+    progress_log(
+        f"입력 수집 완료: frames={len(frames)} cameras={','.join(expected_cameras)} "
+        f"trim_overlap={args.trim_overlap} timestamp_align={args.timestamp_align}"
+    )
+    progress_log(f"결과 디렉터리: {output_dir}")
 
     summary, matched_frame_sets, missed_frames = build_replay_summary(
         frames=frames,
@@ -555,6 +758,8 @@ def main():
         skipped_image_files=skipped_image_files,
         non_image_files=non_image_files,
         timestamp_ranges=timestamp_ranges,
+        label=f"main {args.window_ms}ms",
+        progress_interval=args.progress_interval,
     )
 
     (output_dir / "summary.json").write_text(
@@ -578,9 +783,34 @@ def main():
             original_per_camera_counts=original_per_camera_counts,
             skipped_image_files=skipped_image_files,
             non_image_files=non_image_files,
+            label_prefix=f"pairwise {args.window_ms}ms",
+            progress_interval=args.progress_interval,
         )
         (output_dir / "pairwise_summary.json").write_text(
             json.dumps(pairwise_summaries, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    window_sweep_summaries = []
+    if window_sweep:
+        window_sweep_summaries = build_window_sweep_summaries(
+            windows_ms=window_sweep,
+            frames=frames,
+            expected_cameras=expected_cameras,
+            buffer_size=args.buffer_size,
+            recent_limit=args.recent_limit,
+            timestamp_align=args.timestamp_align,
+            trim_overlap=args.trim_overlap,
+            overlap=overlap,
+            per_camera_counts=per_camera_counts,
+            original_per_camera_counts=original_per_camera_counts,
+            skipped_image_files=skipped_image_files,
+            non_image_files=non_image_files,
+            timestamp_ranges=timestamp_ranges,
+            include_pairwise=args.pairwise,
+            progress_interval=args.progress_interval,
+        )
+        (output_dir / "window_sweep_summary.json").write_text(
+            json.dumps(window_sweep_summaries, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
 
@@ -610,6 +840,18 @@ def main():
                 + f"opportunity={item['overlap_sync_opportunity_count']} "
                 + f"ratio={item['matched_ratio_in_overlap']:.4f} "
                 + f"p95_delta={item['max_delta_ms']['p95']}"
+            )
+    if window_sweep_summaries:
+        print("window_sweep:")
+        for item in window_sweep_summaries:
+            print(
+                f"  {item['window_ms']}ms: "
+                + f"matched={item['matched_frame_set_count']} "
+                + f"opportunity={item['overlap_sync_opportunity_count']} "
+                + f"ratio={item['matched_ratio_in_overlap']:.4f} "
+                + f"avg_delta={item['max_delta_ms']['avg']} "
+                + f"p95_delta={item['max_delta_ms']['p95']} "
+                + f"max_delta={item['max_delta_ms']['max']}"
             )
 
 
