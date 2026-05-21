@@ -23,10 +23,16 @@ def serialize_frame(frame, original_timestamps: dict[int, int]) -> dict:
 
 
 def serialize_frame_set(frame_set, original_timestamps: dict[int, int]) -> dict:
+    span_ms = (
+        frame_set.span_ms
+        if frame_set.span_ms is not None
+        else frame_set.max_delta_ms
+    )
     return {
         "frame_set_id": frame_set.frame_set_id,
         "anchor_timestamp_ms": frame_set.anchor_timestamp_ms,
         "max_delta_ms": frame_set.max_delta_ms,
+        "span_ms": span_ms,
         "frames": {
             device_id: serialize_frame(frame, original_timestamps)
             for device_id, frame in sorted(frame_set.frames.items())
@@ -134,6 +140,7 @@ def build_summary(
     matched_frame_sets: list[dict],
 ):
     max_deltas = [item["max_delta_ms"] for item in matched_frame_sets]
+    span_values = [item["span_ms"] for item in matched_frame_sets]
     matched_count = len(matched_frame_sets)
     largest_camera_count = max(per_camera_counts.values()) if per_camera_counts else 0
     largest_camera_ratio = (
@@ -184,6 +191,14 @@ def build_summary(
             "p95": percentile(max_deltas, 0.95),
             "max": max(max_deltas) if max_deltas else None,
         },
+        "span_ms": {
+            "min": min(span_values) if span_values else None,
+            "avg": mean(span_values) if span_values else None,
+            "p95": percentile(span_values, 0.95),
+            "max": max(span_values) if span_values else None,
+        },
+        "watermark_timestamp_ms": status.get("watermark_timestamp_ms"),
+        "dropped_stale_count": status.get("dropped_stale_count", 0),
     }
 
 
@@ -332,6 +347,9 @@ def compact_summary(summary: dict) -> dict:
         "duplicate_count": summary["duplicate_count"],
         "ignored_count": summary["ignored_count"],
         "max_delta_ms": summary["max_delta_ms"],
+        "span_ms": summary["span_ms"],
+        "watermark_timestamp_ms": summary["watermark_timestamp_ms"],
+        "dropped_stale_count": summary["dropped_stale_count"],
         "last_reason": summary["last_reason"],
         "last_missing_cameras": summary["last_missing_cameras"],
     }

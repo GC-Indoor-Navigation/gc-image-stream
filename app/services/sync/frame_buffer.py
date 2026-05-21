@@ -46,6 +46,37 @@ class CameraSyncBuffer:
                 nearest_delta = delta
         return nearest
 
+    def available_frames(
+        self,
+        exclude_frame_ids: set[int] | None = None,
+    ) -> list[StoredSyncFrame]:
+        excluded = exclude_frame_ids or set()
+        return sorted(
+            (
+                frame
+                for frame in self.frames
+                if frame.frame_id not in excluded
+            ),
+            key=lambda frame: (frame.timestamp_ms, frame.frame_id),
+        )
+
+    def drop_frames_older_than(
+        self,
+        timestamp_ms: int,
+        counted_exclude_frame_ids: set[int] | None = None,
+    ) -> int:
+        counted_excluded = counted_exclude_frame_ids or set()
+        kept: deque[StoredSyncFrame] = deque(maxlen=self.max_frames)
+        dropped_count = 0
+        for frame in self.frames:
+            if frame.timestamp_ms < timestamp_ms:
+                if frame.frame_id not in counted_excluded:
+                    dropped_count += 1
+                continue
+            kept.append(frame)
+        self.frames = kept
+        return dropped_count
+
     def status(self, device_id: str) -> dict:
         return {
             "device_id": device_id,
@@ -108,6 +139,45 @@ class SyncFrameBufferManager:
                 window_ms,
                 exclude_frame_ids=exclude_frame_ids,
             )
+
+    def available_frames(
+        self,
+        device_id: str,
+        exclude_frame_ids: set[int] | None = None,
+    ) -> list[StoredSyncFrame]:
+        with self._lock:
+            buffer = self._buffers.get(device_id)
+            if buffer is None:
+                return []
+            return buffer.available_frames(exclude_frame_ids=exclude_frame_ids)
+
+    def latest_timestamps(self, device_ids: list[str]) -> dict[str, int]:
+        with self._lock:
+            latest: dict[str, int] = {}
+            for device_id in device_ids:
+                buffer = self._buffers.get(device_id)
+                if buffer is None or buffer.last_timestamp_ms is None:
+                    continue
+                latest[device_id] = buffer.last_timestamp_ms
+            return latest
+
+    def drop_frames_older_than(
+        self,
+        device_ids: list[str],
+        timestamp_ms: int,
+        counted_exclude_frame_ids: set[int] | None = None,
+    ) -> int:
+        with self._lock:
+            dropped_count = 0
+            for device_id in device_ids:
+                buffer = self._buffers.get(device_id)
+                if buffer is None:
+                    continue
+                dropped_count += buffer.drop_frames_older_than(
+                    timestamp_ms,
+                    counted_exclude_frame_ids=counted_exclude_frame_ids,
+                )
+            return dropped_count
 
     def snapshot(self) -> dict:
         with self._lock:

@@ -44,11 +44,54 @@ def test_stream_sync_matcher_builds_frame_set_when_all_cameras_match():
     frame_set = matcher.try_match(anchor)
 
     assert frame_set is not None
-    assert frame_set.anchor_timestamp_ms == 990
+    assert frame_set.anchor_timestamp_ms == 1010
     assert frame_set.max_delta_ms == 20
+    assert frame_set.span_ms == 20
     assert set(frame_set.frames) == {"camera1", "camera2", "camera3"}
     assert matcher.status()["matched_count"] == 1
     assert matcher.status()["last_frame_set_id"] == 1
+    assert matcher.status()["last_span_ms"] == 20
+
+
+def test_stream_sync_matcher_rejects_anchor_window_match_when_full_span_is_too_wide():
+    buffer_manager = SyncFrameBufferManager(buffer_size=120)
+    matcher = SyncMatcher(
+        buffer_manager=buffer_manager,
+        expected_cameras=["camera1", "camera2", "camera3"],
+        window_ms=70,
+    )
+    buffer_manager.add_frame(make_frame(1, "camera1", 1000, 1))
+    buffer_manager.add_frame(make_frame(2, "camera2", 1065, 1))
+    anchor = buffer_manager.add_frame(make_frame(3, "camera3", 935, 1))
+
+    frame_set = matcher.try_match(anchor)
+
+    assert frame_set is None
+    status = matcher.status()
+    assert status["matched_count"] == 0
+    assert status["missed_count"] == 1
+    assert status["last_reason"] == "no frame set inside sync window"
+
+
+def test_stream_sync_matcher_drops_stale_unmatched_frames_by_watermark():
+    buffer_manager = SyncFrameBufferManager(buffer_size=120)
+    matcher = SyncMatcher(
+        buffer_manager=buffer_manager,
+        expected_cameras=["camera1", "camera2"],
+        window_ms=50,
+    )
+    first = buffer_manager.add_frame(make_frame(1, "camera1", 1000, 1))
+    second = buffer_manager.add_frame(make_frame(2, "camera2", 1200, 1))
+    third = buffer_manager.add_frame(make_frame(3, "camera1", 1300, 2))
+
+    assert matcher.try_match(first) is None
+    assert matcher.try_match(second) is None
+    assert matcher.try_match(third) is None
+
+    status = matcher.status()
+    assert status["dropped_stale_count"] == 1
+    assert status["watermark_timestamp_ms"] == 1200
+    assert status["last_reason"] == "no frame set inside sync window"
 
 
 def test_stream_sync_matcher_returns_none_until_all_cameras_are_present():
@@ -325,6 +368,7 @@ def test_monitoring_recent_sync_frame_sets_returns_matched_sets(
     assert frame_set["frame_set_id"] == 1
     assert frame_set["anchor_timestamp_ms"] == 1010
     assert frame_set["max_delta_ms"] == 10
+    assert frame_set["span_ms"] == 10
     assert set(frame_set["frames"]) == {"camera1", "camera2"}
     assert frame_set["frames"]["camera1"]["timestamp_ms"] == 1000
     assert frame_set["frames"]["camera1"]["image_size"] == len(b"frame-1")

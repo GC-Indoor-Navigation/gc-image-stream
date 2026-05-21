@@ -165,6 +165,9 @@ def serialize_sync_frame_set(frame_set: SynchronizedFrameSet) -> dict:
         "frame_set_id": frame_set.frame_set_id,
         "anchor_timestamp_ms": frame_set.anchor_timestamp_ms,
         "max_delta_ms": frame_set.max_delta_ms,
+        "span_ms": frame_set.span_ms
+        if frame_set.span_ms is not None
+        else frame_set.max_delta_ms,
         "frames": {
             device_id: {
                 "frame_id": frame.frame_id,

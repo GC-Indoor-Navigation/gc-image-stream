@@ -55,6 +55,9 @@ class StreamSyncService:
                 "last_frame_set_id": None,
                 "last_anchor_timestamp_ms": None,
                 "last_max_delta_ms": None,
+                "last_span_ms": None,
+                "watermark_timestamp_ms": None,
+                "dropped_stale_count": 0,
                 "last_missing_cameras": [],
                 "last_reason": None,
             }

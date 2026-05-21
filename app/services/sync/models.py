@@ -30,3 +30,4 @@ class SynchronizedFrameSet:
     anchor_timestamp_ms: int
     max_delta_ms: int
     frames: dict[str, StoredSyncFrame]
+    span_ms: int | None = None

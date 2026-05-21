@@ -185,7 +185,8 @@ def print_summary_block(
             "event note  : "
             + "no_set is per-frame matcher state, not missing frame-set count"
         )
-        print(f"delta ms    : {format_delta(summary['max_delta_ms'])}")
+        print(f"span ms     : {format_delta(summary['span_ms'])}")
+        print(f"stale drops : {summary['dropped_stale_count']:,}")
         print(f"last reason : {summary['last_reason']}")
     else:
         print_section("Replay Run")
@@ -195,24 +196,24 @@ def print_summary_block(
 
     if pairwise_summaries:
         print_section("Pairwise Result")
-        print(f"{'cameras':<43} {'ratio':>8} {'matched':>16} {'p95':>8}")
+        print(f"{'cameras':<43} {'ratio':>8} {'matched':>16} {'span p95':>8}")
         for item in pairwise_summaries:
             print(
                 f"{' + '.join(item['cameras']):<43} "
                 + f"{format_ratio(item['matched_ratio_in_overlap']):>8} "
                 + f"{format_fraction(item['matched_frame_set_count'], item['overlap_sync_opportunity_count']):>16} "
-                + f"{str(item['max_delta_ms']['p95']):>8}"
+                + f"{str(item['span_ms']['p95']):>8}"
             )
 
     if window_sweep_summaries:
         print_section("Window Sweep Result")
-        print(f"{'window':>8} {'ratio':>9} {'matched':>15} {'avg':>10} {'p95':>8} {'max':>8}")
+        print(f"{'window':>8} {'ratio':>9} {'matched':>15} {'span avg':>10} {'p95':>8} {'max':>8}")
         for item in window_sweep_summaries:
             print(
                 f"{str(item['window_ms']) + 'ms':>8} "
                 + f"{format_ratio(item['matched_ratio_in_overlap']):>9} "
                 + f"{format_fraction(item['matched_frame_set_count'], item['overlap_sync_opportunity_count']):>15} "
-                + f"{format_optional_float(item['max_delta_ms']['avg']):>10} "
-                + f"{str(item['max_delta_ms']['p95']):>8} "
-                + f"{str(item['max_delta_ms']['max']):>8}"
+                + f"{format_optional_float(item['span_ms']['avg']):>10} "
+                + f"{str(item['span_ms']['p95']):>8} "
+                + f"{str(item['span_ms']['max']):>8}"
             )
