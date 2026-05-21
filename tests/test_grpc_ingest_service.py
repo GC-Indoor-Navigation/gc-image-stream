@@ -456,6 +456,111 @@ def test_grpc_ingest_service_drops_pre_gate_frames_until_all_devices_are_seen(
     assert service.status()["collection_started"] is True
     assert service.status()["collection_stopped"] is True
     assert service.status()["observed_device_ids"] == ["android_01", "android_02"]
+    assert service.status()["gate_start_timestamp_ms"] == 1_100
+    assert service.status()["pre_gate_dropped_count"] == 2
+    assert service.status()["stale_after_gate_dropped_count"] == 0
+    assert service.status()["first_accepted_timestamp_ms"] == 1_200
+
+
+def test_grpc_ingest_service_drops_backlog_frames_older_than_gate_start(
+    session_factory,
+    tmp_path,
+):
+    captured_calls: list[dict] = []
+
+    def fake_ingest_func(db, **kwargs):
+        captured_calls.append(kwargs)
+        frame_path = tmp_path / kwargs["filename"]
+        frame_path.write_bytes(kwargs["image_bytes"])
+        return {
+            "frame": Frame(
+                id=len(captured_calls),
+                device_id=kwargs["device_id"],
+                timestamp=kwargs["timestamp_ms"],
+                file_path=str(frame_path),
+            ),
+            "camera_state": None,
+            "relay_enqueued": False,
+        }
+
+    service = GrpcIngestService(
+        db_factory=session_factory,
+        ingest_func=fake_ingest_func,
+        state=StreamState(),
+        relay_service=ProcessingRelayService(),
+    )
+    service.configure(
+        bind="127.0.0.1:0",
+        enabled=True,
+        expected_device_ids=["android_01", "android_02"],
+    )
+
+    response = service._stream_frames(
+        iter(
+            [
+                FramePacket(
+                    metadata=FrameMetadata(
+                        camera_id="camera_01",
+                        device_id="android_01",
+                        frame_sequence=1,
+                        device_timestamp_ms=1_000,
+                        format="jpeg",
+                    ),
+                    jpeg=b"pre-gate-1",
+                ),
+                FramePacket(
+                    metadata=FrameMetadata(
+                        camera_id="camera_02",
+                        device_id="android_02",
+                        frame_sequence=1,
+                        device_timestamp_ms=1_500,
+                        format="jpeg",
+                    ),
+                    jpeg=b"opens-gate",
+                ),
+                FramePacket(
+                    metadata=FrameMetadata(
+                        camera_id="camera_01",
+                        device_id="android_01",
+                        frame_sequence=2,
+                        device_timestamp_ms=1_200,
+                        format="jpeg",
+                    ),
+                    jpeg=b"stale-backlog",
+                ),
+                FramePacket(
+                    metadata=FrameMetadata(
+                        camera_id="camera_02",
+                        device_id="android_02",
+                        frame_sequence=2,
+                        device_timestamp_ms=1_510,
+                        format="jpeg",
+                    ),
+                    jpeg=b"keep-2",
+                ),
+                FramePacket(
+                    metadata=FrameMetadata(
+                        camera_id="camera_01",
+                        device_id="android_01",
+                        frame_sequence=3,
+                        device_timestamp_ms=1_520,
+                        format="jpeg",
+                    ),
+                    jpeg=b"keep-1",
+                ),
+            ]
+        ),
+        context=None,
+    )
+
+    assert response.received_frames == 2
+    assert [call["timestamp_ms"] for call in captured_calls] == [1_510, 1_520]
+    assert [call["image_bytes"] for call in captured_calls] == [b"keep-2", b"keep-1"]
+    status = service.status()
+    assert status["gate_start_timestamp_ms"] == 1_500
+    assert status["pre_gate_dropped_count"] == 2
+    assert status["stale_after_gate_dropped_count"] == 1
+    assert status["first_accepted_timestamp_ms"] == 1_510
 
 
 def test_grpc_ingest_service_gates_by_expected_device_ids(
@@ -564,6 +669,9 @@ def test_grpc_ingest_service_gates_by_expected_device_ids(
     assert service.status()["expected_device_ids"] == ["android_01", "android_02"]
     assert service.status()["missing_device_ids"] == ["android_01", "android_02"]
     assert service.status()["unexpected_device_ids"] == ["unexpected_android"]
+    assert service.status()["gate_start_timestamp_ms"] == 1_100
+    assert service.status()["pre_gate_dropped_count"] == 2
+    assert service.status()["stale_after_gate_dropped_count"] == 0
 
 
 def test_grpc_ingest_service_stops_collection_when_expected_device_disconnects():

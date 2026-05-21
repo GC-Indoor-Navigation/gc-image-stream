@@ -173,6 +173,10 @@ def test_monitoring_grpc_ingest_returns_gate_status(client):
     assert body["observed_device_ids"] == []
     assert body["active_device_ids"] == []
     assert body["missing_device_ids"] == ["android_01", "android_02", "android_03"]
+    assert body["gate_start_timestamp_ms"] is None
+    assert body["first_accepted_timestamp_ms"] is None
+    assert body["pre_gate_dropped_count"] == 0
+    assert body["stale_after_gate_dropped_count"] == 0
     assert body["collection_started"] is False
     assert body["collection_stopped"] is False
     assert body["collection_stop_reason"] is None

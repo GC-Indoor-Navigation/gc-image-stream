@@ -97,6 +97,11 @@ class GrpcIngestService:
         self.observed_device_ids: set[str] = set()
         self.active_device_ids: set[str] = set()
         self.active_device_stream_counts: dict[str, int] = {}
+        self.latest_device_timestamp_ms: dict[str, int] = {}
+        self.gate_start_timestamp_ms: int | None = None
+        self.first_accepted_timestamp_ms: int | None = None
+        self.pre_gate_dropped_count = 0
+        self.stale_after_gate_dropped_count = 0
         self.collection_started = False
         self.collection_stopped = False
         self.collection_stop_reason: str | None = None
@@ -133,6 +138,11 @@ class GrpcIngestService:
         self.observed_device_ids = set()
         self.active_device_ids = set()
         self.active_device_stream_counts = {}
+        self.latest_device_timestamp_ms = {}
+        self.gate_start_timestamp_ms = None
+        self.first_accepted_timestamp_ms = None
+        self.pre_gate_dropped_count = 0
+        self.stale_after_gate_dropped_count = 0
         self.collection_started = not self._gate_enabled()
         self.collection_stopped = False
         self.collection_stop_reason = None
@@ -184,8 +194,13 @@ class GrpcIngestService:
             "expected_device_ids": expected_device_ids,
             "observed_device_ids": sorted(self.observed_device_ids),
             "active_device_ids": sorted(self.active_device_ids),
+            "latest_device_timestamp_ms": dict(sorted(self.latest_device_timestamp_ms.items())),
             "missing_device_ids": missing_device_ids,
             "unexpected_device_ids": unexpected_device_ids if self.expected_device_ids else [],
+            "gate_start_timestamp_ms": self.gate_start_timestamp_ms,
+            "first_accepted_timestamp_ms": self.first_accepted_timestamp_ms,
+            "pre_gate_dropped_count": self.pre_gate_dropped_count,
+            "stale_after_gate_dropped_count": self.stale_after_gate_dropped_count,
             "collection_started": self.collection_started,
             "collection_stopped": self.collection_stopped,
             "collection_stop_reason": self.collection_stop_reason,
@@ -194,7 +209,7 @@ class GrpcIngestService:
     def _gate_enabled(self) -> bool:
         return self.expected_device_count is not None
 
-    def _allow_ingest(self, device_id: str) -> bool:
+    def _allow_ingest(self, device_id: str, timestamp_ms: int | None = None) -> bool:
         with self.gate_lock:
             if self.collection_stopped:
                 return False
@@ -203,6 +218,16 @@ class GrpcIngestService:
                 return False
 
             if self.gate_open:
+                if (
+                    self._gate_enabled()
+                    and self.gate_start_timestamp_ms is not None
+                    and timestamp_ms is not None
+                    and timestamp_ms < self.gate_start_timestamp_ms
+                ):
+                    self.stale_after_gate_dropped_count += 1
+                    return False
+                if self.first_accepted_timestamp_ms is None and timestamp_ms is not None:
+                    self.first_accepted_timestamp_ms = timestamp_ms
                 return True
 
             if self.expected_device_ids:
@@ -210,13 +235,13 @@ class GrpcIngestService:
                     self.active_device_ids
                 )
                 if expected_devices_seen:
-                    self.gate_open = True
-                    self.collection_started = True
+                    self._open_gate_locked()
+                self.pre_gate_dropped_count += 1
                 return False
 
             if len(self.active_device_ids) >= (self.expected_device_count or 0):
-                self.gate_open = True
-                self.collection_started = True
+                self._open_gate_locked()
+            self.pre_gate_dropped_count += 1
             return False
 
     def _mark_device_active(self, device_id: str):
@@ -226,6 +251,33 @@ class GrpcIngestService:
                 self.active_device_stream_counts.get(device_id, 0) + 1
             )
             self.active_device_ids.add(device_id)
+
+    def _record_device_timestamp(self, device_id: str, timestamp_ms: int):
+        with self.gate_lock:
+            previous_timestamp_ms = self.latest_device_timestamp_ms.get(device_id)
+            if previous_timestamp_ms is None or timestamp_ms > previous_timestamp_ms:
+                self.latest_device_timestamp_ms[device_id] = timestamp_ms
+
+    def _open_gate_locked(self):
+        self.gate_open = True
+        self.collection_started = True
+        if self.gate_start_timestamp_ms is not None:
+            return
+
+        if self.expected_device_ids:
+            timestamps = [
+                self.latest_device_timestamp_ms[device_id]
+                for device_id in self.expected_device_ids
+                if device_id in self.latest_device_timestamp_ms
+            ]
+        else:
+            timestamps = [
+                self.latest_device_timestamp_ms[device_id]
+                for device_id in self.active_device_ids
+                if device_id in self.latest_device_timestamp_ms
+            ]
+        if timestamps:
+            self.gate_start_timestamp_ms = max(timestamps)
 
     def _mark_stream_closed(self, device_ids: set[str]):
         if not device_ids:
@@ -291,6 +343,10 @@ class GrpcIngestService:
                 if internal_device_id not in stream_device_ids:
                     stream_device_ids.add(internal_device_id)
                     self._mark_device_active(internal_device_id)
+                self._record_device_timestamp(
+                    internal_device_id,
+                    metadata.device_timestamp_ms,
+                )
 
                 content_type = resolve_content_type(metadata.format or "jpeg")
                 camera_id = metadata.camera_id or "unknown"
@@ -300,7 +356,10 @@ class GrpcIngestService:
                 experiment_recorder = get_stream_experiment_recorder()
                 if experiment_recorder is not None:
                     experiment_recorder.observe_device(internal_device_id)
-                if not self._allow_ingest(internal_device_id):
+                if not self._allow_ingest(
+                    internal_device_id,
+                    timestamp_ms=metadata.device_timestamp_ms,
+                ):
                     continue
 
                 db = self.db_factory()
