@@ -10,6 +10,8 @@ class ReplayFrame:
     device_id: str
     timestamp_ms: int
     original_timestamp_ms: int
+    server_received_at_ms: int | None
+    server_receive_sequence: int | None
     sequence: int
     file_path: Path
     content_type: str

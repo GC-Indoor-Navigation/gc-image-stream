@@ -16,6 +16,8 @@ def serialize_frame(frame, original_timestamps: dict[int, int]) -> dict:
         "device_id": frame.device_id,
         "timestamp_ms": frame.timestamp_ms,
         "original_timestamp_ms": original_timestamps.get(frame.frame_id, frame.timestamp_ms),
+        "server_received_at_ms": frame.server_received_at_ms,
+        "server_receive_sequence": frame.server_receive_sequence,
         "sequence": frame.sequence,
         "image_size": frame.image_size,
         "file_path": frame.file_path,
@@ -129,6 +131,7 @@ def build_summary(
     buffer_size: int,
     timestamp_align: str,
     trim_overlap: bool,
+    order_by: str,
     overlap: dict | None,
     per_camera_counts: dict[str, int],
     original_per_camera_counts: dict[str, int],
@@ -163,6 +166,7 @@ def build_summary(
         "window_ms": window_ms,
         "buffer_size": buffer_size,
         "timestamp_align": timestamp_align,
+        "order_by": order_by,
         "trim_overlap": trim_overlap,
         "overlap": overlap or {"enabled": False},
         "input_frame_count": input_frame_count,
@@ -210,6 +214,7 @@ def build_replay_summary(
     recent_limit: int,
     timestamp_align: str,
     trim_overlap: bool,
+    order_by: str,
     label: str,
     progress_interval: int,
 ) -> ReplayRunResult:
@@ -228,6 +233,7 @@ def build_replay_summary(
         buffer_size=buffer_size,
         timestamp_align=timestamp_align,
         trim_overlap=trim_overlap,
+        order_by=order_by,
         overlap=replay_input.overlap,
         per_camera_counts=replay_input.per_camera_counts,
         original_per_camera_counts=replay_input.original_per_camera_counts,
@@ -254,6 +260,7 @@ def build_subset_replay_summary(
     recent_limit: int,
     timestamp_align: str,
     trim_overlap: bool,
+    order_by: str,
     label: str,
     progress_interval: int,
 ) -> ReplayRunResult:
@@ -285,6 +292,7 @@ def build_subset_replay_summary(
         buffer_size=buffer_size,
         timestamp_align=timestamp_align,
         trim_overlap=trim_overlap,
+        order_by=order_by,
         overlap=replay_input.overlap,
         per_camera_counts=per_camera_counts,
         original_per_camera_counts=original_per_camera_counts,
@@ -310,6 +318,7 @@ def build_pairwise_summaries(
     recent_limit: int,
     timestamp_align: str,
     trim_overlap: bool,
+    order_by: str,
     label_prefix: str,
     progress_interval: int,
 ):
@@ -324,6 +333,7 @@ def build_pairwise_summaries(
             recent_limit=recent_limit,
             timestamp_align=timestamp_align,
             trim_overlap=trim_overlap,
+            order_by=order_by,
             label=f"{label_prefix} {'+'.join(pair)}",
             progress_interval=progress_interval,
         ).summary
@@ -339,6 +349,7 @@ def build_pairwise_summaries(
 def compact_summary(summary: dict) -> dict:
     return {
         "window_ms": summary["window_ms"],
+        "order_by": summary["order_by"],
         "matched_frame_set_count": summary["matched_frame_set_count"],
         "overlap_sync_opportunity_count": summary["overlap_sync_opportunity_count"],
         "matched_ratio_in_overlap": summary["matched_ratio_in_overlap"],
@@ -363,6 +374,7 @@ def build_window_sweep_summaries(
     recent_limit: int,
     timestamp_align: str,
     trim_overlap: bool,
+    order_by: str,
     include_pairwise: bool,
     progress_interval: int,
     precomputed_summaries: dict[int, dict] | None = None,
@@ -382,6 +394,7 @@ def build_window_sweep_summaries(
                 recent_limit=recent_limit,
                 timestamp_align=timestamp_align,
                 trim_overlap=trim_overlap,
+                order_by=order_by,
                 label=f"window-sweep {window_ms}ms",
                 progress_interval=progress_interval,
             ).summary
@@ -396,6 +409,7 @@ def build_window_sweep_summaries(
                     recent_limit=recent_limit,
                     timestamp_align=timestamp_align,
                     trim_overlap=trim_overlap,
+                    order_by=order_by,
                     label_prefix=f"window-sweep {window_ms}ms pairwise",
                     progress_interval=progress_interval,
                 )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -40,7 +41,12 @@ def content_type_for(path: Path) -> str:
     return "application/octet-stream"
 
 
-def parse_frame_file(path: Path, expected_device_id: str, frame_id: int) -> ReplayFrame | None:
+def parse_frame_file(
+    path: Path,
+    expected_device_id: str,
+    frame_id: int,
+    order_by: str,
+) -> ReplayFrame | None:
     if path.suffix.lower() not in IMAGE_EXTENSIONS:
         return None
     match = FRAME_NAME_RE.match(path.name)
@@ -52,15 +58,41 @@ def parse_frame_file(path: Path, expected_device_id: str, frame_id: int) -> Repl
         return None
 
     timestamp_ms = int(match.group("timestamp_ms"))
+    server_received_at_ms = None
+    server_receive_sequence = None
+    if order_by == "received":
+        server_received_at_ms, server_receive_sequence = read_server_timing(path)
+
     return ReplayFrame(
         frame_id=frame_id,
         device_id=device_id,
         timestamp_ms=timestamp_ms,
         original_timestamp_ms=timestamp_ms,
+        server_received_at_ms=server_received_at_ms,
+        server_receive_sequence=server_receive_sequence,
         sequence=int(match.group("sequence")),
         file_path=path,
         content_type=content_type_for(path),
     )
+
+
+def read_server_timing(path: Path) -> tuple[int, int]:
+    sidecar_path = Path(f"{path}.metadata.json")
+    if not sidecar_path.is_file():
+        raise ValueError(
+            "Received-order replay requires sidecar server timing: "
+            + str(sidecar_path)
+        )
+    payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    server = payload.get("server") or {}
+    received_at_ms = server.get("received_at_ms")
+    receive_sequence = server.get("server_receive_sequence")
+    if received_at_ms is None or receive_sequence is None:
+        raise ValueError(
+            "Received-order replay requires server.received_at_ms and "
+            f"server.server_receive_sequence: {sidecar_path}"
+        )
+    return int(received_at_ms), int(receive_sequence)
 
 
 def collect_replay_input(
@@ -68,6 +100,7 @@ def collect_replay_input(
     limit_per_camera: int | None,
     timestamp_align: str,
     trim_overlap: bool,
+    order_by: str = "capture",
 ) -> ReplayInput:
     (
         frames,
@@ -81,6 +114,7 @@ def collect_replay_input(
         limit_per_camera=limit_per_camera,
         timestamp_align=timestamp_align,
         trim_overlap=trim_overlap,
+        order_by=order_by,
     )
     return ReplayInput(
         frames=frames,
@@ -99,7 +133,11 @@ def collect_replay_frames(
     limit_per_camera: int | None,
     timestamp_align: str,
     trim_overlap: bool,
+    order_by: str,
 ):
+    if order_by not in {"capture", "received"}:
+        raise ValueError(f"Unsupported replay order: {order_by}")
+
     frames_by_camera: dict[str, list[ReplayFrame]] = {}
     skipped_image_files = 0
     non_image_files = 0
@@ -115,7 +153,7 @@ def collect_replay_frames(
             if path.suffix.lower() not in IMAGE_EXTENSIONS:
                 non_image_files += 1
                 continue
-            frame = parse_frame_file(path, device_id, next_frame_id)
+            frame = parse_frame_file(path, device_id, next_frame_id, order_by)
             if frame is None:
                 skipped_image_files += 1
                 continue
@@ -141,7 +179,7 @@ def collect_replay_frames(
         frames.extend(camera_frames)
         per_camera_counts[device_id] = len(camera_frames)
 
-    frames.sort(key=lambda frame: (frame.timestamp_ms, frame.device_id, frame.sequence))
+    frames = sort_replay_frames(frames, order_by)
     return (
         frames,
         per_camera_counts,
@@ -150,6 +188,30 @@ def collect_replay_frames(
         non_image_files,
         overlap,
     )
+
+
+def sort_replay_frames(frames: list[ReplayFrame], order_by: str) -> list[ReplayFrame]:
+    if order_by == "capture":
+        return sorted(
+            frames,
+            key=lambda frame: (frame.timestamp_ms, frame.device_id, frame.sequence),
+        )
+    if order_by == "received":
+        return sorted(
+            frames,
+            key=lambda frame: (
+                frame.server_received_at_ms
+                if frame.server_received_at_ms is not None
+                else -1,
+                frame.server_receive_sequence
+                if frame.server_receive_sequence is not None
+                else -1,
+                frame.timestamp_ms,
+                frame.device_id,
+                frame.sequence,
+            ),
+        )
+    raise ValueError(f"Unsupported replay order: {order_by}")
 
 
 def calculate_overlap(frames_by_camera: dict[str, list[ReplayFrame]]) -> dict | None:
@@ -191,6 +253,8 @@ def align_camera_frames(frames: list[ReplayFrame], timestamp_align: str) -> list
             device_id=frame.device_id,
             timestamp_ms=frame.timestamp_ms - first_timestamp_ms,
             original_timestamp_ms=frame.original_timestamp_ms,
+            server_received_at_ms=frame.server_received_at_ms,
+            server_receive_sequence=frame.server_receive_sequence,
             sequence=frame.sequence,
             file_path=frame.file_path,
             content_type=frame.content_type,

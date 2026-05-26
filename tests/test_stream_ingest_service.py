@@ -43,6 +43,34 @@ def test_ingest_frame_saves_file_registers_metadata_and_updates_state(
         db.close()
 
 
+def test_ingest_frame_uses_explicit_received_time_for_stream_state(
+    session_factory,
+    storage_dir,
+):
+    db = session_factory()
+    state = StreamState()
+    relay_service = ProcessingRelayService()
+    try:
+        result = ingest_frame(
+            db,
+            device_id="camera1",
+            timestamp_ms=1712321562400,
+            sequence=7,
+            content_type="image/jpeg",
+            image_bytes=b"frame-bytes",
+            state=state,
+            relay_service=relay_service,
+            received_at_ms=1712321562999,
+        )
+
+        latest_frame = result["camera_state"].latest_frame
+        assert latest_frame is not None
+        assert latest_frame.received_at_ms == 1712321562999
+        assert list(result["camera_state"].recent_received_at_ms) == [1712321562999]
+    finally:
+        db.close()
+
+
 def test_ingest_frame_uses_duplicate_registration_fallback(
     session_factory,
     storage_dir,

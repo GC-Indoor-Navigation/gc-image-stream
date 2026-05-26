@@ -158,6 +158,7 @@ def print_summary_block(
         print(f"per camera  : {format_counts(summary['per_camera_counts'])}")
         print(f"original    : {format_counts(summary['original_per_camera_counts'])}")
         print(f"align       : {summary['timestamp_align']}")
+        print(f"order by    : {summary['order_by']}")
         print(f"trim overlap: {summary['trim_overlap']}")
         if summary["overlap"].get("enabled"):
             overlap = summary["overlap"]

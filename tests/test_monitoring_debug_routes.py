@@ -177,6 +177,7 @@ def test_monitoring_grpc_ingest_returns_gate_status(client):
     assert body["first_accepted_timestamp_ms"] is None
     assert body["pre_gate_dropped_count"] == 0
     assert body["stale_after_gate_dropped_count"] == 0
+    assert body["server_receive_sequence"] == 0
     assert body["collection_started"] is False
     assert body["collection_stopped"] is False
     assert body["collection_stop_reason"] is None

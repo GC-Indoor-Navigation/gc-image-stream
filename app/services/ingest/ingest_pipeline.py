@@ -51,6 +51,7 @@ def ingest_frame(
     sync_service: StreamSyncService = stream_sync_service,
     frame_set_relay_service: ProcessingFrameSetRelayService = processing_frame_set_relay_service,
     relay_mode: str | None = None,
+    received_at_ms: int | None = None,
 ):
     started_at = time.monotonic()
     target_filename = filename or f"{device_id}_{timestamp_ms}.jpg"
@@ -77,6 +78,7 @@ def ingest_frame(
         file_path=frame.file_path,
         content_type=content_type,
         image_bytes_size=len(image_bytes),
+        received_at_ms=received_at_ms,
     )
     selected_relay_mode = resolve_ingest_relay_mode(
         relay_mode,

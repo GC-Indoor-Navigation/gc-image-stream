@@ -129,6 +129,12 @@ def parse_args():
         help="Use only the common absolute timestamp range across all camera folders.",
     )
     parser.add_argument(
+        "--order-by",
+        choices=["capture", "received"],
+        default="capture",
+        help="Replay input order: capture timestamp or server received timestamp.",
+    )
+    parser.add_argument(
         "--pairwise",
         action="store_true",
         help="Also replay every 2-camera combination.",
@@ -157,13 +163,14 @@ def main():
         limit_per_camera=args.limit_per_camera,
         timestamp_align=args.timestamp_align,
         trim_overlap=args.trim_overlap,
+        order_by=args.order_by,
     )
     output_dir = build_output_dir(Path(args.output_dir), args.run_id)
     setup_log(
         f"input loaded: frames={len(replay_input.frames)} "
         f"cameras={','.join(replay_input.expected_cameras)} "
         f"mode={plan.mode} trim_overlap={args.trim_overlap} "
-        f"timestamp_align={args.timestamp_align}"
+        f"timestamp_align={args.timestamp_align} order_by={args.order_by}"
     )
     setup_log(f"output directory: {output_dir}\n")
 
@@ -177,6 +184,7 @@ def main():
             recent_limit=args.recent_limit,
             timestamp_align=args.timestamp_align,
             trim_overlap=args.trim_overlap,
+            order_by=args.order_by,
             label=f"main {plan.detail_window_ms}ms",
             progress_interval=args.progress_interval,
         )
@@ -190,6 +198,7 @@ def main():
                 recent_limit=args.recent_limit,
                 timestamp_align=args.timestamp_align,
                 trim_overlap=args.trim_overlap,
+                order_by=args.order_by,
                 label_prefix=f"pairwise {plan.detail_window_ms}ms",
                 progress_interval=args.progress_interval,
             )
@@ -210,6 +219,7 @@ def main():
             recent_limit=args.recent_limit,
             timestamp_align=args.timestamp_align,
             trim_overlap=args.trim_overlap,
+            order_by=args.order_by,
             include_pairwise=args.pairwise,
             progress_interval=args.progress_interval,
             precomputed_summaries=precomputed_summaries,

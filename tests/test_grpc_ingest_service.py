@@ -227,6 +227,20 @@ def test_grpc_ingest_service_streams_android_collector_packets_into_ingest_path(
         assert sidecar_payload["metadata"]["focal_length_mm"] == pytest.approx(5.43)
         assert sidecar_payload["metadata"]["session_id"] == "android_01_2026-05-17T14-32-10"
         assert sidecar_payload["metadata"]["resolution_support"] == "1280x720"
+        server_payload = sidecar_payload["server"]
+        assert isinstance(server_payload["received_at_ms"], int)
+        assert isinstance(server_payload["received_monotonic_ns"], int)
+        assert isinstance(server_payload["ingested_at_ms"], int)
+        assert isinstance(server_payload["ingested_monotonic_ns"], int)
+        assert server_payload["ingested_at_ms"] >= server_payload["received_at_ms"]
+        assert server_payload["ingest_elapsed_ms"] >= 0
+        assert server_payload["server_receive_sequence"] == 1
+        assert server_payload["gate_start_timestamp_ms"] is None
+
+        camera_state = service.state.get_camera("android_a14_001")
+        assert camera_state is not None
+        assert camera_state.latest_frame is not None
+        assert camera_state.latest_frame.received_at_ms == server_payload["received_at_ms"]
     finally:
         service.stop()
 

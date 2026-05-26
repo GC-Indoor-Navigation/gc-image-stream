@@ -102,6 +102,7 @@ class GrpcIngestService:
         self.first_accepted_timestamp_ms: int | None = None
         self.pre_gate_dropped_count = 0
         self.stale_after_gate_dropped_count = 0
+        self.server_receive_sequence = 0
         self.collection_started = False
         self.collection_stopped = False
         self.collection_stop_reason: str | None = None
@@ -143,6 +144,7 @@ class GrpcIngestService:
         self.first_accepted_timestamp_ms = None
         self.pre_gate_dropped_count = 0
         self.stale_after_gate_dropped_count = 0
+        self.server_receive_sequence = 0
         self.collection_started = not self._gate_enabled()
         self.collection_stopped = False
         self.collection_stop_reason = None
@@ -201,6 +203,7 @@ class GrpcIngestService:
             "first_accepted_timestamp_ms": self.first_accepted_timestamp_ms,
             "pre_gate_dropped_count": self.pre_gate_dropped_count,
             "stale_after_gate_dropped_count": self.stale_after_gate_dropped_count,
+            "server_receive_sequence": self.server_receive_sequence,
             "collection_started": self.collection_started,
             "collection_stopped": self.collection_stopped,
             "collection_stop_reason": self.collection_stop_reason,
@@ -257,6 +260,11 @@ class GrpcIngestService:
             previous_timestamp_ms = self.latest_device_timestamp_ms.get(device_id)
             if previous_timestamp_ms is None or timestamp_ms > previous_timestamp_ms:
                 self.latest_device_timestamp_ms[device_id] = timestamp_ms
+
+    def _next_server_receive_sequence(self) -> int:
+        with self.gate_lock:
+            self.server_receive_sequence += 1
+            return self.server_receive_sequence
 
     def _open_gate_locked(self):
         self.gate_open = True
@@ -327,6 +335,9 @@ class GrpcIngestService:
 
         try:
             for request in request_iterator:
+                received_at_ms = int(time.time() * 1000)
+                received_monotonic_ns = time.monotonic_ns()
+                server_receive_sequence = self._next_server_receive_sequence()
                 metadata = request.metadata
                 internal_device_id = metadata.device_id or metadata.camera_id
                 if not internal_device_id:
@@ -352,7 +363,7 @@ class GrpcIngestService:
                 camera_id = metadata.camera_id or "unknown"
                 filename = f"{internal_device_id}_{camera_id}_{metadata.frame_sequence}.jpg"
                 session_id = metadata.session_id if metadata.HasField("session_id") else None
-                received_at = time.monotonic()
+                received_at = received_monotonic_ns / 1_000_000_000
                 experiment_recorder = get_stream_experiment_recorder()
                 if experiment_recorder is not None:
                     experiment_recorder.observe_device(internal_device_id)
@@ -375,8 +386,11 @@ class GrpcIngestService:
                         session_id=session_id,
                         state=self.state,
                         relay_service=self.relay_service,
+                        received_at_ms=received_at_ms,
                     )
-                    ingested_at = time.monotonic()
+                    ingested_at_ms = int(time.time() * 1000)
+                    ingested_monotonic_ns = time.monotonic_ns()
+                    ingested_at = ingested_monotonic_ns / 1_000_000_000
                     if experiment_recorder is not None:
                         experiment_recorder.record_capture(
                             device_id=internal_device_id,
@@ -400,6 +414,15 @@ class GrpcIngestService:
                                 preserving_proto_field_name=True,
                                 always_print_fields_with_no_presence=True,
                             ),
+                            "server": {
+                                "received_at_ms": received_at_ms,
+                                "received_monotonic_ns": received_monotonic_ns,
+                                "ingested_at_ms": ingested_at_ms,
+                                "ingested_monotonic_ns": ingested_monotonic_ns,
+                                "ingest_elapsed_ms": ingested_at_ms - received_at_ms,
+                                "server_receive_sequence": server_receive_sequence,
+                                "gate_start_timestamp_ms": self.gate_start_timestamp_ms,
+                            },
                         },
                     )
                 finally:
