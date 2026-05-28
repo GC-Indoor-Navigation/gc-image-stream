@@ -168,7 +168,7 @@ DEBUG_VIEWER_HTML = """<!doctype html>
     }
     .side {
       display: grid;
-      grid-template-rows: auto auto;
+      grid-template-rows: auto auto auto;
       gap: 12px;
       background: transparent;
       border: 0;
@@ -228,6 +228,10 @@ DEBUG_VIEWER_HTML = """<!doctype html>
         <div id="relayStatus" class="panel-body relay-grid"></div>
       </section>
       <section>
+        <div class="section-head">Sync</div>
+        <div id="syncStatus" class="panel-body relay-grid"></div>
+      </section>
+      <section>
         <div class="section-head">Timestamp Delta</div>
         <div id="deltaList" class="panel-body delta-list"></div>
       </section>
@@ -245,6 +249,7 @@ DEBUG_VIEWER_HTML = """<!doctype html>
     const selectedTitle = document.getElementById("selectedTitle");
     const lastUpdated = document.getElementById("lastUpdated");
     const relayStatus = document.getElementById("relayStatus");
+    const syncStatus = document.getElementById("syncStatus");
     const ingestStatus = document.getElementById("ingestStatus");
     const deltaList = document.getElementById("deltaList");
     const refreshButton = document.getElementById("refreshButton");
@@ -348,6 +353,24 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       ].join("");
     }
 
+    function renderSync(status) {
+      const expected = (status.expected_cameras || []).join(", ") || "-";
+      syncStatus.innerHTML = [
+        metric("Enabled", status.enabled ? "true" : "false", status.enabled ? "ok" : ""),
+        metric("Expected", expected),
+        metric("Window", status.window_ms ?? "-"),
+        metric("Matched", status.matched_count ?? 0, Number(status.matched_count || 0) > 0 ? "ok" : ""),
+        metric("Missed", status.missed_count ?? 0, Number(status.missed_count || 0) > 0 ? "warn" : "ok"),
+        metric("Duplicate", status.duplicate_count ?? 0, Number(status.duplicate_count || 0) > 0 ? "warn" : "ok"),
+        metric("Ignored", status.ignored_count ?? 0, Number(status.ignored_count || 0) > 0 ? "warn" : "ok"),
+        metric("Last Frame Set", status.last_frame_set_id ?? "-"),
+        metric("Last Span", status.last_span_ms ?? "-"),
+        metric("Watermark", status.watermark_timestamp_ms ?? "-"),
+        metric("Stale Drops", status.dropped_stale_count ?? 0, Number(status.dropped_stale_count || 0) > 0 ? "warn" : "ok"),
+        metric("Last Reason", status.last_reason || "-"),
+      ].join("");
+    }
+
     function renderIngest(status) {
       const expected = (status.expected_device_ids || []).join(", ") || status.expected_device_count || "-";
       const observed = (status.observed_device_ids || []).join(", ") || "-";
@@ -397,6 +420,7 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       cameras = payload.cameras || [];
       const ingest = payload.grpc_ingest || {};
       const relay = payload.relay || {};
+      const sync = payload.sync || {};
       const delta = payload.timestamp_delta || { items: [] };
       if (!selectedDeviceId && cameras.length > 0) {
         selectedDeviceId = cameras[0].device_id;
@@ -408,15 +432,17 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       renderSelected();
       renderIngest(ingest);
       renderRelay(relay);
+      renderSync(sync);
       renderDelta(delta);
       lastUpdated.textContent = new Date().toLocaleTimeString();
     }
 
     async function loadFallback(forceImageReload = false) {
-      const [cameraResponse, ingestResponse, relayResponse, deltaResponse] = await Promise.all([
+      const [cameraResponse, ingestResponse, relayResponse, syncResponse, deltaResponse] = await Promise.all([
         fetch("/monitoring/cameras"),
         fetch("/monitoring/grpc-ingest"),
         fetch("/monitoring/relay"),
+        fetch("/monitoring/sync"),
         fetch("/debug/timestamp-delta"),
       ]);
       cameras = (await cameraResponse.json()).items || [];
@@ -430,6 +456,7 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       renderSelected(forceImageReload);
       renderIngest(await ingestResponse.json());
       renderRelay(await relayResponse.json());
+      renderSync(await syncResponse.json());
       renderDelta(await deltaResponse.json());
       lastUpdated.textContent = new Date().toLocaleTimeString();
     }
