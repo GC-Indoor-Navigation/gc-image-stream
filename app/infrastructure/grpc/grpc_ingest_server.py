@@ -97,6 +97,7 @@ class GrpcIngestService:
         self.observed_device_ids: set[str] = set()
         self.active_device_ids: set[str] = set()
         self.active_device_stream_counts: dict[str, int] = {}
+        self.stream_closed_at_ms: dict[str, int] = {}
         self.latest_device_timestamp_ms: dict[str, int] = {}
         self.gate_start_timestamp_ms: int | None = None
         self.first_accepted_timestamp_ms: int | None = None
@@ -139,6 +140,7 @@ class GrpcIngestService:
         self.observed_device_ids = set()
         self.active_device_ids = set()
         self.active_device_stream_counts = {}
+        self.stream_closed_at_ms = {}
         self.latest_device_timestamp_ms = {}
         self.gate_start_timestamp_ms = None
         self.first_accepted_timestamp_ms = None
@@ -196,6 +198,7 @@ class GrpcIngestService:
             "expected_device_ids": expected_device_ids,
             "observed_device_ids": sorted(self.observed_device_ids),
             "active_device_ids": sorted(self.active_device_ids),
+            "stream_closed_at_ms": dict(sorted(self.stream_closed_at_ms.items())),
             "latest_device_timestamp_ms": dict(sorted(self.latest_device_timestamp_ms.items())),
             "missing_device_ids": missing_device_ids,
             "unexpected_device_ids": unexpected_device_ids if self.expected_device_ids else [],
@@ -254,6 +257,7 @@ class GrpcIngestService:
                 self.active_device_stream_counts.get(device_id, 0) + 1
             )
             self.active_device_ids.add(device_id)
+            self.stream_closed_at_ms.pop(device_id, None)
 
     def _record_device_timestamp(self, device_id: str, timestamp_ms: int):
         with self.gate_lock:
@@ -291,6 +295,7 @@ class GrpcIngestService:
         if not device_ids:
             return
 
+        closed_at_ms = int(time.time() * 1000)
         with self.gate_lock:
             for device_id in device_ids:
                 stream_count = self.active_device_stream_counts.get(device_id, 0) - 1
@@ -299,6 +304,7 @@ class GrpcIngestService:
                 else:
                     self.active_device_stream_counts.pop(device_id, None)
                     self.active_device_ids.discard(device_id)
+                    self.stream_closed_at_ms[device_id] = closed_at_ms
             if (
                 not self.collection_started
                 or self.collection_stopped

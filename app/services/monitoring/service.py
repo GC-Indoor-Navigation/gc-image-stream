@@ -22,15 +22,41 @@ STALE_THRESHOLD_MS = 3_000
 def serialize_camera_state(
     camera: CameraStreamState,
     now_ms: int | None = None,
+    grpc_active_device_ids: set[str] | None = None,
+    grpc_stream_closed_at_ms: dict[str, int] | None = None,
 ):
     current_ms = now_ms if now_ms is not None else current_time_ms()
     latest = camera.latest_frame
+    is_grpc_camera = (
+        grpc_active_device_ids is not None
+        or (
+            grpc_stream_closed_at_ms is not None
+            and camera.device_id in grpc_stream_closed_at_ms
+        )
+    )
+    grpc_is_active = (
+        camera.device_id in grpc_active_device_ids
+        if grpc_active_device_ids is not None
+        else False
+    )
+    closed_at_ms = (
+        grpc_stream_closed_at_ms.get(camera.device_id)
+        if grpc_stream_closed_at_ms is not None
+        else None
+    )
+    age_reference_ms = current_ms
+    if latest is not None and is_grpc_camera and not grpc_is_active and closed_at_ms is not None:
+        age_reference_ms = max(latest.received_at_ms, closed_at_ms)
     last_received_age_ms = (
-        current_ms - latest.received_at_ms
+        age_reference_ms - latest.received_at_ms
         if latest is not None
         else None
     )
-    connected = latest is not None and last_received_age_ms is not None
+    connected = (
+        latest is not None
+        and last_received_age_ms is not None
+        and (not is_grpc_camera or grpc_is_active)
+    )
     is_stale = connected and last_received_age_ms > STALE_THRESHOLD_MS
     status = "healthy" if connected and not is_stale else "stale" if is_stale else "disconnected"
 
@@ -57,14 +83,39 @@ def serialize_camera_state(
 
 def list_camera_states(state: StreamState = stream_state):
     cameras = sorted(state.list_cameras(), key=lambda camera: camera.device_id)
-    return [serialize_camera_state(camera) for camera in cameras]
+    grpc_status = grpc_ingest_service.status()
+    grpc_device_ids = set(grpc_status["expected_device_ids"])
+    grpc_device_ids.update(grpc_status["observed_device_ids"])
+    grpc_device_ids.update(grpc_status["active_device_ids"])
+    grpc_device_ids.update(grpc_status["stream_closed_at_ms"].keys())
+    active_device_ids = set(grpc_status["active_device_ids"])
+    stream_closed_at_ms = grpc_status["stream_closed_at_ms"]
+    return [
+        serialize_camera_state(
+            camera,
+            grpc_active_device_ids=active_device_ids if camera.device_id in grpc_device_ids else None,
+            grpc_stream_closed_at_ms=stream_closed_at_ms,
+        )
+        for camera in cameras
+    ]
 
 
 def get_camera_state(device_id: str, state: StreamState = stream_state):
     camera = state.get_camera(device_id)
     if camera is None:
         return None
-    return serialize_camera_state(camera)
+    grpc_status = grpc_ingest_service.status()
+    grpc_device_ids = set(grpc_status["expected_device_ids"])
+    grpc_device_ids.update(grpc_status["observed_device_ids"])
+    grpc_device_ids.update(grpc_status["active_device_ids"])
+    grpc_device_ids.update(grpc_status["stream_closed_at_ms"].keys())
+    return serialize_camera_state(
+        camera,
+        grpc_active_device_ids=(
+            set(grpc_status["active_device_ids"]) if camera.device_id in grpc_device_ids else None
+        ),
+        grpc_stream_closed_at_ms=grpc_status["stream_closed_at_ms"],
+    )
 
 
 def estimate_fps(

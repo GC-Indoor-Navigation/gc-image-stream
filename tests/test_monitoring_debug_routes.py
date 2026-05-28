@@ -4,7 +4,8 @@ from app.infrastructure.grpc.processing_relay_client import (
     processing_relay_service,
 )
 from app.services.ingest.ingest_pipeline import ingest_frame
-from app.services.stream.state import stream_state
+from app.services.monitoring.service import serialize_camera_state
+from app.services.stream.state import CameraStreamState, StreamFrameState, stream_state
 
 
 def test_monitoring_cameras_returns_stream_state(client, session_factory):
@@ -45,6 +46,34 @@ def test_monitoring_camera_returns_404_for_unknown_camera(client):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Camera state not found"
+
+
+def test_disconnected_grpc_camera_age_stops_at_stream_close():
+    camera = CameraStreamState(
+        device_id="camera1",
+        latest_frame=StreamFrameState(
+            frame_id=1,
+            device_id="camera1",
+            timestamp=1000,
+            sequence=1,
+            file_path="storage/camera1.jpg",
+            content_type="image/jpeg",
+            image_bytes_size=12,
+            received_at_ms=10_000,
+        ),
+        frame_count=1,
+    )
+
+    item = serialize_camera_state(
+        camera,
+        now_ms=20_000,
+        grpc_active_device_ids=set(),
+        grpc_stream_closed_at_ms={"camera1": 12_500},
+    )
+
+    assert item["connected"] is False
+    assert item["status"] == "disconnected"
+    assert item["last_received_age_ms"] == 2_500
 
 
 def test_debug_latest_frame_returns_state_file(client, session_factory):
