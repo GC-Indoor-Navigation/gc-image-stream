@@ -65,6 +65,7 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       gap: 12px;
       padding: 12px;
       min-height: calc(100vh - 56px);
+      align-items: start;
     }
     .left {
       display: grid;
@@ -152,18 +153,21 @@ DEBUG_VIEWER_HTML = """<!doctype html>
     .viewer {
       display: grid;
       grid-template-rows: 44px minmax(260px, 1fr) auto;
-      min-height: calc(100vh - 80px);
+      height: clamp(520px, calc(100vh - 80px), 860px);
+      min-height: 0;
+      align-self: start;
+      overflow: hidden;
     }
     .frame-wrap {
       display: grid;
       place-items: center;
       background: #111827;
-      min-height: 360px;
+      min-height: 0;
       overflow: hidden;
     }
     .frame-wrap img {
       max-width: 100%;
-      max-height: calc(100vh - 190px);
+      max-height: 100%;
       object-fit: contain;
       display: block;
     }
@@ -226,7 +230,12 @@ DEBUG_VIEWER_HTML = """<!doctype html>
     .bad { color: var(--bad); }
     @media (max-width: 980px) {
       main { grid-template-columns: 1fr; }
-      .viewer { min-height: auto; }
+      .viewer {
+        height: auto;
+        max-height: none;
+        overflow: visible;
+      }
+      .frame-wrap { min-height: 360px; }
       .detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
   </style>
