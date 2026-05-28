@@ -106,6 +106,9 @@ DEBUG_VIEWER_HTML = """<!doctype html>
     .collapsible.collapsed > .section-head {
       border-bottom: 0;
     }
+    .collapsible.collapsed {
+      min-height: 0;
+    }
     .collapsible.collapsed > .collapsible-body {
       display: none;
     }
@@ -195,11 +198,15 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       overflow-wrap: anywhere;
     }
     .side {
-      display: grid;
-      grid-template-rows: auto auto auto;
+      display: flex;
+      flex-direction: column;
       gap: 12px;
+      align-self: start;
       background: transparent;
       border: 0;
+    }
+    .side > section {
+      width: 100%;
     }
     .panel-body { padding: 10px; }
     .relay-grid, .delta-list {
