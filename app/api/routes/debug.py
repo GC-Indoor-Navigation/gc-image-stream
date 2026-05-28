@@ -87,6 +87,31 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       border-bottom: 1px solid var(--line);
       font-weight: 650;
     }
+    .section-title {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    .section-toggle {
+      width: 28px;
+      height: 28px;
+      display: inline-grid;
+      place-items: center;
+      padding: 0;
+      border-radius: 6px;
+      font-size: 15px;
+      line-height: 1;
+      transition: transform 120ms ease;
+      flex: 0 0 auto;
+    }
+    .collapsible.collapsed > .section-head {
+      border-bottom: 0;
+    }
+    .collapsible.collapsed > .collapsible-body {
+      display: none;
+    }
+    .collapsible.collapsed .section-toggle {
+      transform: rotate(-90deg);
+    }
     .camera-list {
       display: grid;
       gap: 8px;
@@ -94,6 +119,9 @@ DEBUG_VIEWER_HTML = """<!doctype html>
     }
     .camera-section {
       min-height: 290px;
+    }
+    .camera-section.collapsed {
+      min-height: 0;
     }
     .camera-row {
       width: 100%;
@@ -203,13 +231,19 @@ DEBUG_VIEWER_HTML = """<!doctype html>
   </header>
   <main>
     <div class="left">
-      <section class="camera-section">
-        <div class="section-head">Cameras <span id="cameraCount" class="meta">0</span></div>
-        <div id="cameraList" class="camera-list"></div>
+      <section class="camera-section collapsible">
+        <div class="section-head">
+          <span class="section-title">Cameras <span id="cameraCount" class="meta">0</span></span>
+          <button class="section-toggle" type="button" aria-label="Toggle Cameras" aria-expanded="true" aria-controls="cameraList" data-collapse-target="cameraList">▾</button>
+        </div>
+        <div id="cameraList" class="camera-list collapsible-body"></div>
       </section>
-      <section>
-        <div class="section-head">gRPC Ingest</div>
-        <div id="ingestStatus" class="panel-body relay-grid"></div>
+      <section class="collapsible">
+        <div class="section-head">
+          <span class="section-title">gRPC Ingest</span>
+          <button class="section-toggle" type="button" aria-label="Toggle gRPC Ingest" aria-expanded="true" aria-controls="ingestStatus" data-collapse-target="ingestStatus">▾</button>
+        </div>
+        <div id="ingestStatus" class="panel-body relay-grid collapsible-body"></div>
       </section>
     </div>
     <section class="viewer">
@@ -223,17 +257,26 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       <div id="details" class="detail-grid"></div>
     </section>
     <section class="side">
-      <section>
-        <div class="section-head">Relay</div>
-        <div id="relayStatus" class="panel-body relay-grid"></div>
+      <section class="collapsible">
+        <div class="section-head">
+          <span class="section-title">Relay</span>
+          <button class="section-toggle" type="button" aria-label="Toggle Relay" aria-expanded="true" aria-controls="relayStatus" data-collapse-target="relayStatus">▾</button>
+        </div>
+        <div id="relayStatus" class="panel-body relay-grid collapsible-body"></div>
       </section>
-      <section>
-        <div class="section-head">Sync</div>
-        <div id="syncStatus" class="panel-body relay-grid"></div>
+      <section class="collapsible">
+        <div class="section-head">
+          <span class="section-title">Sync</span>
+          <button class="section-toggle" type="button" aria-label="Toggle Sync" aria-expanded="true" aria-controls="syncStatus" data-collapse-target="syncStatus">▾</button>
+        </div>
+        <div id="syncStatus" class="panel-body relay-grid collapsible-body"></div>
       </section>
-      <section>
-        <div class="section-head">Timestamp Delta</div>
-        <div id="deltaList" class="panel-body delta-list"></div>
+      <section class="collapsible">
+        <div class="section-head">
+          <span class="section-title">Timestamp Delta</span>
+          <button class="section-toggle" type="button" aria-label="Toggle Timestamp Delta" aria-expanded="true" aria-controls="deltaList" data-collapse-target="deltaList">▾</button>
+        </div>
+        <div id="deltaList" class="panel-body delta-list collapsible-body"></div>
       </section>
     </section>
   </main>
@@ -275,6 +318,17 @@ DEBUG_VIEWER_HTML = """<!doctype html>
 
     function metric(label, value, className = "") {
       return `<div class="metric"><span>${escapeHtml(label)}</span><strong class="${className}">${escapeHtml(value)}</strong></div>`;
+    }
+
+    function initCollapsibles() {
+      document.querySelectorAll("[data-collapse-target]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const section = button.closest(".collapsible");
+          if (!section) return;
+          const collapsed = section.classList.toggle("collapsed");
+          button.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        });
+      });
     }
 
     function renderCameras() {
@@ -473,6 +527,7 @@ DEBUG_VIEWER_HTML = """<!doctype html>
     }
 
     refreshButton.addEventListener("click", () => loadFallback(true));
+    initCollapsibles();
     loadFallback(true);
     connectEventStream();
   </script>
