@@ -3,7 +3,12 @@ from __future__ import annotations
 from itertools import combinations
 from statistics import mean
 
-from app.services.sync import StreamSyncService, SyncInputFrame
+from app.services.sync import (
+    StreamSyncService,
+    SyncFrameBufferManager,
+    SyncInputFrame,
+    SynchronizedFrameSet,
+)
 from scripts.storage_sync_replay import ROOT_DIR
 from scripts.storage_sync_replay.console import ProgressBar
 from scripts.storage_sync_replay.loader import build_timestamp_ranges
@@ -50,6 +55,153 @@ def percentile(values: list[int], p: float) -> float | None:
     return float(ordered[index])
 
 
+def build_replay_matcher(
+    *,
+    matcher_mode: str,
+    expected_cameras: list[str],
+    window_ms: int,
+    buffer_size: int,
+    recent_limit: int,
+):
+    if matcher_mode == "span":
+        service = StreamSyncService()
+        service.configure(
+            enabled=True,
+            expected_cameras=expected_cameras,
+            window_ms=window_ms,
+            buffer_size=buffer_size,
+            recent_limit=recent_limit,
+        )
+        return SpanReplayMatcher(service)
+    if matcher_mode == "anchor":
+        return AnchorReplayMatcher(
+            expected_cameras=expected_cameras,
+            window_ms=window_ms,
+            buffer_size=buffer_size,
+        )
+    raise ValueError(f"Unsupported matcher mode: {matcher_mode}")
+
+
+class SpanReplayMatcher:
+    def __init__(self, service: StreamSyncService):
+        self.service = service
+
+    def handle_frame(self, frame: SyncInputFrame) -> SynchronizedFrameSet | None:
+        return self.service.handle_frame(frame)
+
+    def status(self) -> dict:
+        status = self.service.status()
+        status["matcher_mode"] = "span"
+        return status
+
+
+class AnchorReplayMatcher:
+    def __init__(
+        self,
+        *,
+        expected_cameras: list[str],
+        window_ms: int,
+        buffer_size: int,
+    ):
+        self.expected_cameras = list(expected_cameras)
+        self.window_ms = window_ms
+        self.buffer_manager = SyncFrameBufferManager(buffer_size=buffer_size)
+        self._next_frame_set_id = 1
+        self._emitted_keys: set[tuple[int, ...]] = set()
+        self._used_frame_ids: set[int] = set()
+        self.matched_count = 0
+        self.missed_count = 0
+        self.duplicate_count = 0
+        self.ignored_count = 0
+        self.last_frame_set_id: int | None = None
+        self.last_anchor_timestamp_ms: int | None = None
+        self.last_max_delta_ms: int | None = None
+        self.last_span_ms: int | None = None
+        self.last_missing_cameras: list[str] = []
+        self.last_reason: str | None = None
+
+    def handle_frame(self, frame: SyncInputFrame) -> SynchronizedFrameSet | None:
+        stored = self.buffer_manager.add_frame(frame)
+        if stored is None:
+            return None
+        if stored.device_id not in self.expected_cameras:
+            self.ignored_count += 1
+            self.last_anchor_timestamp_ms = stored.timestamp_ms
+            self.last_missing_cameras = []
+            self.last_reason = f"unexpected camera: {stored.device_id}"
+            return None
+
+        selected = {}
+        missing_cameras = []
+        for device_id in self.expected_cameras:
+            nearest = self.buffer_manager.nearest_frame(
+                device_id,
+                stored.timestamp_ms,
+                self.window_ms,
+                exclude_frame_ids=self._used_frame_ids,
+            )
+            if nearest is None:
+                missing_cameras.append(device_id)
+            else:
+                selected[device_id] = nearest
+        if missing_cameras:
+            self._record_miss(stored.timestamp_ms, missing_cameras)
+            return None
+
+        key = tuple(sorted(frame.frame_id for frame in selected.values()))
+        if key in self._emitted_keys:
+            self.duplicate_count += 1
+            self.last_anchor_timestamp_ms = stored.timestamp_ms
+            self.last_missing_cameras = []
+            self.last_reason = "duplicate frame set"
+            return None
+
+        timestamps = [frame.timestamp_ms for frame in selected.values()]
+        span_ms = max(timestamps) - min(timestamps)
+        max_delta_ms = max(abs(timestamp - stored.timestamp_ms) for timestamp in timestamps)
+        frame_set = SynchronizedFrameSet(
+            frame_set_id=self._next_frame_set_id,
+            anchor_timestamp_ms=stored.timestamp_ms,
+            max_delta_ms=max_delta_ms,
+            frames=selected,
+            span_ms=span_ms,
+        )
+        self._next_frame_set_id += 1
+        self._emitted_keys.add(key)
+        self._used_frame_ids.update(key)
+        self.matched_count += 1
+        self.last_frame_set_id = frame_set.frame_set_id
+        self.last_anchor_timestamp_ms = stored.timestamp_ms
+        self.last_max_delta_ms = max_delta_ms
+        self.last_span_ms = span_ms
+        self.last_missing_cameras = []
+        self.last_reason = "matched"
+        return frame_set
+
+    def status(self) -> dict:
+        return {
+            "matcher_mode": "anchor",
+            "matched_count": self.matched_count,
+            "missed_count": self.missed_count,
+            "duplicate_count": self.duplicate_count,
+            "ignored_count": self.ignored_count,
+            "last_frame_set_id": self.last_frame_set_id,
+            "last_anchor_timestamp_ms": self.last_anchor_timestamp_ms,
+            "last_max_delta_ms": self.last_max_delta_ms,
+            "last_span_ms": self.last_span_ms,
+            "watermark_timestamp_ms": None,
+            "dropped_stale_count": 0,
+            "last_missing_cameras": self.last_missing_cameras,
+            "last_reason": self.last_reason,
+        }
+
+    def _record_miss(self, anchor_timestamp_ms: int, missing_cameras: list[str]):
+        self.missed_count += 1
+        self.last_anchor_timestamp_ms = anchor_timestamp_ms
+        self.last_missing_cameras = missing_cameras
+        self.last_reason = "missing cameras inside anchor window"
+
+
 def replay_frames(
     frames: list[ReplayFrame],
     expected_cameras: list[str],
@@ -58,10 +210,10 @@ def replay_frames(
     recent_limit: int,
     label: str,
     progress_interval: int,
+    matcher_mode: str = "span",
 ):
-    service = StreamSyncService()
-    service.configure(
-        enabled=True,
+    matcher = build_replay_matcher(
+        matcher_mode=matcher_mode,
         expected_cameras=expected_cameras,
         window_ms=window_ms,
         buffer_size=buffer_size,
@@ -78,7 +230,7 @@ def replay_frames(
     progress_bar.start()
 
     for index, frame in enumerate(frames, start=1):
-        result = service.handle_frame(
+        result = matcher.handle_frame(
             SyncInputFrame(
                 frame_id=frame.frame_id,
                 device_id=frame.device_id,
@@ -94,7 +246,7 @@ def replay_frames(
         if result is not None:
             matched_frame_sets.append(serialize_frame_set(result, original_timestamps))
         else:
-            status = service.status()
+            status = matcher.status()
             if status["last_anchor_timestamp_ms"] == frame.timestamp_ms:
                 no_set_frames.append(
                     {
@@ -109,14 +261,14 @@ def replay_frames(
                     }
                 )
 
-        status = service.status()
+        status = matcher.status()
         progress_bar.draw(
             index,
             matched=len(matched_frame_sets),
             ignored=status["ignored_count"],
         )
 
-    status = service.status()
+    status = matcher.status()
     progress_bar.finish(
         matched=len(matched_frame_sets),
         ignored=status["ignored_count"],
@@ -163,6 +315,7 @@ def build_summary(
     )
     return {
         "expected_cameras": expected_cameras,
+        "matcher_mode": status.get("matcher_mode", "span"),
         "window_ms": window_ms,
         "buffer_size": buffer_size,
         "timestamp_align": timestamp_align,
@@ -217,6 +370,7 @@ def build_replay_summary(
     order_by: str,
     label: str,
     progress_interval: int,
+    matcher_mode: str = "span",
 ) -> ReplayRunResult:
     status, matched_frame_sets, no_set_frames = replay_frames(
         frames=replay_input.frames,
@@ -226,6 +380,7 @@ def build_replay_summary(
         recent_limit=recent_limit,
         label=label,
         progress_interval=progress_interval,
+        matcher_mode=matcher_mode,
     )
     summary = build_summary(
         expected_cameras=replay_input.expected_cameras,
@@ -263,6 +418,7 @@ def build_subset_replay_summary(
     order_by: str,
     label: str,
     progress_interval: int,
+    matcher_mode: str = "span",
 ) -> ReplayRunResult:
     subset_frames = [
         frame
@@ -285,6 +441,7 @@ def build_subset_replay_summary(
         recent_limit=recent_limit,
         label=label,
         progress_interval=progress_interval,
+        matcher_mode=matcher_mode,
     )
     summary = build_summary(
         expected_cameras=expected_cameras,
@@ -321,6 +478,7 @@ def build_pairwise_summaries(
     order_by: str,
     label_prefix: str,
     progress_interval: int,
+    matcher_mode: str,
 ):
     pairwise = []
     for camera_pair in combinations(replay_input.expected_cameras, 2):
@@ -336,6 +494,7 @@ def build_pairwise_summaries(
             order_by=order_by,
             label=f"{label_prefix} {'+'.join(pair)}",
             progress_interval=progress_interval,
+            matcher_mode=matcher_mode,
         ).summary
         pairwise.append(
             {
@@ -349,6 +508,7 @@ def build_pairwise_summaries(
 def compact_summary(summary: dict) -> dict:
     return {
         "window_ms": summary["window_ms"],
+        "matcher_mode": summary["matcher_mode"],
         "order_by": summary["order_by"],
         "matched_frame_set_count": summary["matched_frame_set_count"],
         "overlap_sync_opportunity_count": summary["overlap_sync_opportunity_count"],
@@ -379,6 +539,7 @@ def build_window_sweep_summaries(
     progress_interval: int,
     precomputed_summaries: dict[int, dict] | None = None,
     precomputed_pairwise: dict[int, list[dict]] | None = None,
+    matcher_mode: str = "span",
 ):
     sweep = []
     precomputed_summaries = precomputed_summaries or {}
@@ -397,6 +558,7 @@ def build_window_sweep_summaries(
                 order_by=order_by,
                 label=f"window-sweep {window_ms}ms",
                 progress_interval=progress_interval,
+                matcher_mode=matcher_mode,
             ).summary
         item = compact_summary(summary)
         if include_pairwise:
@@ -412,6 +574,7 @@ def build_window_sweep_summaries(
                     order_by=order_by,
                     label_prefix=f"window-sweep {window_ms}ms pairwise",
                     progress_interval=progress_interval,
+                    matcher_mode=matcher_mode,
                 )
             item["pairwise"] = [
                 {

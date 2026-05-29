@@ -116,6 +116,12 @@ def parse_args():
     )
     parser.add_argument("--buffer-size", type=int, default=120)
     parser.add_argument("--recent-limit", type=int, default=20)
+    parser.add_argument(
+        "--matcher-mode",
+        choices=["span", "anchor"],
+        default="span",
+        help="Sync matcher to use: span is current production logic, anchor is legacy nearest-frame logic.",
+    )
     parser.add_argument("--limit-per-camera", type=int, default=None)
     parser.add_argument(
         "--timestamp-align",
@@ -169,7 +175,7 @@ def main():
     setup_log(
         f"input loaded: frames={len(replay_input.frames)} "
         f"cameras={','.join(replay_input.expected_cameras)} "
-        f"mode={plan.mode} trim_overlap={args.trim_overlap} "
+        f"mode={plan.mode} matcher={args.matcher_mode} trim_overlap={args.trim_overlap} "
         f"timestamp_align={args.timestamp_align} order_by={args.order_by}"
     )
     setup_log(f"output directory: {output_dir}\n")
@@ -187,6 +193,7 @@ def main():
             order_by=args.order_by,
             label=f"main {plan.detail_window_ms}ms",
             progress_interval=args.progress_interval,
+            matcher_mode=args.matcher_mode,
         )
         write_detail_outputs(output_dir, detail_result)
 
@@ -201,6 +208,7 @@ def main():
                 order_by=args.order_by,
                 label_prefix=f"pairwise {plan.detail_window_ms}ms",
                 progress_interval=args.progress_interval,
+                matcher_mode=args.matcher_mode,
             )
             write_pairwise_output(output_dir, pairwise_summaries)
 
@@ -224,6 +232,7 @@ def main():
             progress_interval=args.progress_interval,
             precomputed_summaries=precomputed_summaries,
             precomputed_pairwise=precomputed_pairwise,
+            matcher_mode=args.matcher_mode,
         )
         write_window_sweep_output(output_dir, window_sweep_summaries)
 
