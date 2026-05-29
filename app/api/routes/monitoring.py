@@ -285,6 +285,10 @@ MONITORING_VIEWER_HTML = """<!doctype html>
       return `${(ms / 1000).toFixed(1)}s`;
     }
 
+    function formatRatio(value) {
+      return `${(Number(value || 0) * 100).toFixed(2)}%`;
+    }
+
     function statusClass(status) {
       return status === "healthy" ? "healthy" : status === "stale" ? "stale" : "disconnected";
     }
@@ -379,8 +383,9 @@ MONITORING_VIEWER_HTML = """<!doctype html>
         relayCard("Enabled", sync.enabled ? "true" : "false", sync.enabled ? "healthy" : ""),
         relayCard("Expected Cameras", expected),
         relayCard("Window", sync.window_ms ?? "-"),
-        relayCard("Matched", sync.matched_count ?? 0, Number(sync.matched_count || 0) > 0 ? "healthy" : ""),
-        relayCard("Missed", sync.missed_count ?? 0, Number(sync.missed_count || 0) > 0 ? "stale" : "healthy"),
+        relayCard("Frame Sets", `${sync.matched_count ?? 0}/${sync.expected_frame_set_count ?? 0}`, Number(sync.matched_ratio || 0) >= 0.99 ? "healthy" : "stale"),
+        relayCard("Set Ratio", formatRatio(sync.matched_ratio), Number(sync.matched_ratio || 0) >= 0.99 ? "healthy" : "stale"),
+        relayCard("No-set Events", sync.missed_count ?? 0, Number(sync.missed_count || 0) > 0 ? "stale" : "healthy"),
         relayCard("Duplicate", sync.duplicate_count ?? 0, Number(sync.duplicate_count || 0) > 0 ? "stale" : "healthy"),
         relayCard("Last Reason", sync.last_reason || "-"),
         relayCard("Last Frame Set", sync.last_frame_set_id ?? "-"),

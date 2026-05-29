@@ -44,6 +44,7 @@ class StreamSyncService:
         return self.matcher.try_match(stored)
 
     def status(self) -> dict:
+        buffer_snapshot = self.buffer_manager.snapshot()
         sync_status = (
             self.matcher.status()
             if self.matcher is not None
@@ -62,11 +63,17 @@ class StreamSyncService:
                 "last_reason": None,
             }
         )
+        sync_progress = build_sync_progress(
+            buffer_snapshot=buffer_snapshot,
+            expected_cameras=self.expected_cameras,
+            matched_count=sync_status["matched_count"],
+        )
         return {
             "enabled": self.enabled,
             "expected_cameras": list(self.expected_cameras),
             "window_ms": self.window_ms,
-            "buffer": self.buffer_manager.snapshot(),
+            "buffer": buffer_snapshot,
+            **sync_progress,
             **sync_status,
         }
 
@@ -86,3 +93,36 @@ class StreamSyncService:
 
 
 stream_sync_service = StreamSyncService()
+
+
+def build_sync_progress(
+    *,
+    buffer_snapshot: dict,
+    expected_cameras: list[str],
+    matched_count: int,
+) -> dict:
+    camera_counts = {
+        camera["device_id"]: camera["received_count"]
+        for camera in buffer_snapshot.get("cameras", [])
+    }
+    expected_counts = [
+        camera_counts.get(device_id, 0)
+        for device_id in expected_cameras
+    ]
+    expected_frame_set_count = (
+        min(expected_counts)
+        if expected_counts and all(count > 0 for count in expected_counts)
+        else 0
+    )
+    matched_ratio = (
+        matched_count / expected_frame_set_count
+        if expected_frame_set_count > 0
+        else 0.0
+    )
+    return {
+        "expected_frame_set_count": expected_frame_set_count,
+        "matched_ratio": matched_ratio,
+        "per_expected_camera_received_count": dict(
+            zip(expected_cameras, expected_counts, strict=False)
+        ),
+    }

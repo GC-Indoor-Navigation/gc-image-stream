@@ -332,6 +332,10 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       return `${(ms / 1000).toFixed(1)}s`;
     }
 
+    function formatRatio(value) {
+      return `${(Number(value || 0) * 100).toFixed(2)}%`;
+    }
+
     function metric(label, value, className = "") {
       return `<div class="metric"><span>${escapeHtml(label)}</span><strong class="${className}">${escapeHtml(value)}</strong></div>`;
     }
@@ -429,8 +433,9 @@ DEBUG_VIEWER_HTML = """<!doctype html>
         metric("Enabled", status.enabled ? "true" : "false", status.enabled ? "ok" : ""),
         metric("Expected", expected),
         metric("Window", status.window_ms ?? "-"),
-        metric("Matched", status.matched_count ?? 0, Number(status.matched_count || 0) > 0 ? "ok" : ""),
-        metric("Missed", status.missed_count ?? 0, Number(status.missed_count || 0) > 0 ? "warn" : "ok"),
+        metric("Frame Sets", `${status.matched_count ?? 0}/${status.expected_frame_set_count ?? 0}`, Number(status.matched_ratio || 0) >= 0.99 ? "ok" : "warn"),
+        metric("Set Ratio", formatRatio(status.matched_ratio), Number(status.matched_ratio || 0) >= 0.99 ? "ok" : "warn"),
+        metric("No-set Events", status.missed_count ?? 0, Number(status.missed_count || 0) > 0 ? "warn" : "ok"),
         metric("Duplicate", status.duplicate_count ?? 0, Number(status.duplicate_count || 0) > 0 ? "warn" : "ok"),
         metric("Ignored", status.ignored_count ?? 0, Number(status.ignored_count || 0) > 0 ? "warn" : "ok"),
         metric("Last Frame Set", status.last_frame_set_id ?? "-"),

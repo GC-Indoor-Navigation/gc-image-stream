@@ -328,7 +328,36 @@ def test_monitoring_sync_returns_stream_sync_status(client):
     body = response.json()
     assert body["enabled"] is False
     assert body["matched_count"] == 0
+    assert body["expected_frame_set_count"] == 0
+    assert body["matched_ratio"] == 0.0
     assert body["buffer"]["camera_count"] == 0
+
+
+def test_stream_sync_status_reports_frame_set_ratio_by_smallest_camera_count():
+    service = StreamSyncService()
+    service.configure(
+        enabled=True,
+        expected_cameras=["camera1", "camera2", "camera3"],
+        window_ms=50,
+    )
+
+    for index in range(3):
+        timestamp_ms = 1000 + index * 100
+        service.handle_frame(make_frame(index * 3 + 1, "camera1", timestamp_ms, index + 1))
+        service.handle_frame(make_frame(index * 3 + 2, "camera2", timestamp_ms + 10, index + 1))
+        service.handle_frame(make_frame(index * 3 + 3, "camera3", timestamp_ms + 20, index + 1))
+
+    status = service.status()
+
+    assert status["matched_count"] == 3
+    assert status["expected_frame_set_count"] == 3
+    assert status["matched_ratio"] == 1.0
+    assert status["per_expected_camera_received_count"] == {
+        "camera1": 3,
+        "camera2": 3,
+        "camera3": 3,
+    }
+    assert status["buffer"]["received_count"] == 9
 
 
 def test_monitoring_recent_sync_frame_sets_returns_matched_sets(
