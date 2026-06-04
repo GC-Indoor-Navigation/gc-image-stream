@@ -263,6 +263,10 @@ def test_debug_viewer_returns_html(client):
     assert "Sync" in response.text
     assert 'fetch("/monitoring/sync")' in response.text
     assert "renderSync(sync)" in response.text
+    assert "Processing Alerts" in response.text
+    assert 'fetch("/internal/processing-alerts/recent")' in response.text
+    assert "renderAlerts" in response.text
+    assert "data-collapse-target=\"alertStatus\"" in response.text
     assert "data-collapse-target=\"syncStatus\"" in response.text
     assert "initCollapsibles()" in response.text
     assert 'new EventSource("/monitoring/events")' in response.text

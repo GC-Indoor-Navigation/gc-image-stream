@@ -213,17 +213,33 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       width: 100%;
     }
     .panel-body { padding: 10px; }
-    .relay-grid, .delta-list {
+    .relay-grid, .delta-list, .alert-list {
       display: grid;
       gap: 8px;
     }
-    .delta-row {
+    .delta-row, .alert-row {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 8px;
       padding: 8px;
       border: 1px solid var(--line);
       border-radius: 6px;
+    }
+    .alert-row {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .alert-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .alert-meta {
+      display: grid;
+      gap: 3px;
+      color: var(--muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
     }
     .ok { color: var(--accent); }
     .warn { color: var(--warn); }
@@ -289,6 +305,13 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       </section>
       <section class="collapsible">
         <div class="section-head">
+          <span class="section-title">Processing Alerts</span>
+          <button class="section-toggle" type="button" aria-label="Toggle Processing Alerts" aria-expanded="true" aria-controls="alertStatus" data-collapse-target="alertStatus">▾</button>
+        </div>
+        <div id="alertStatus" class="panel-body alert-list collapsible-body"></div>
+      </section>
+      <section class="collapsible">
+        <div class="section-head">
           <span class="section-title">Timestamp Delta</span>
           <button class="section-toggle" type="button" aria-label="Toggle Timestamp Delta" aria-expanded="true" aria-controls="deltaList" data-collapse-target="deltaList">▾</button>
         </div>
@@ -309,6 +332,7 @@ DEBUG_VIEWER_HTML = """<!doctype html>
     const lastUpdated = document.getElementById("lastUpdated");
     const relayStatus = document.getElementById("relayStatus");
     const syncStatus = document.getElementById("syncStatus");
+    const alertStatus = document.getElementById("alertStatus");
     const ingestStatus = document.getElementById("ingestStatus");
     const deltaList = document.getElementById("deltaList");
     const refreshButton = document.getElementById("refreshButton");
@@ -473,6 +497,56 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       ].join("");
     }
 
+    function formatRemainingMs(expiresAtMs) {
+      if (!expiresAtMs) return "-";
+      const remaining = Number(expiresAtMs) - Date.now();
+      if (remaining <= 0) return "expired";
+      if (remaining < 1000) return `${remaining}ms`;
+      return `${(remaining / 1000).toFixed(1)}s`;
+    }
+
+    function renderAlerts(payload) {
+      const status = payload.status || {};
+      const items = payload.items || [];
+      const summary = [
+        metric("Received", status.received_count ?? 0),
+        metric("Active", status.active_count ?? 0, Number(status.active_count || 0) > 0 ? "warn" : "ok"),
+        metric("Retained", status.retained_count ?? 0),
+        metric("Duplicate", status.duplicate_count ?? 0, Number(status.duplicate_count || 0) > 0 ? "warn" : "ok"),
+        metric("Expired", status.expired_count ?? 0, Number(status.expired_count || 0) > 0 ? "warn" : "ok"),
+      ].join("");
+
+      if (items.length === 0) {
+        alertStatus.innerHTML = `${summary}<div class="meta">No active alerts</div>`;
+        return;
+      }
+
+      const rows = items.map((item) => {
+        const routing = item.routing || {};
+        const source = item.source || {};
+        const cameras = routing.camera_devices || source.camera_devices || [];
+        const severityClass = item.severity === "danger" ? "bad" : item.severity === "warning" ? "warn" : "ok";
+        const distance = item.distance_m === null || item.distance_m === undefined
+          ? "-"
+          : `${Number(item.distance_m).toFixed(2)}m`;
+        return `
+          <div class="alert-row">
+            <div class="alert-head">
+              <strong class="${severityClass}">${escapeHtml(item.severity)}</strong>
+              <span class="meta">ttl ${escapeHtml(formatRemainingMs(item.expires_at_ms))}</span>
+            </div>
+            <div class="alert-meta">
+              <span>event ${escapeHtml(item.event_id)} / frame_set ${escapeHtml(item.frame_set_id)}</span>
+              <span>distance ${escapeHtml(distance)} / joint ${escapeHtml(item.joint)}</span>
+              <span>cameras ${escapeHtml(cameras.join(", ") || "-")}</span>
+              <span>delivery ${escapeHtml(routing.delivery_status || "-")}</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+      alertStatus.innerHTML = `${summary}${rows}`;
+    }
+
     function renderDelta(payload) {
       const items = payload.items || [];
       if (items.length === 0) {
@@ -512,12 +586,22 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       lastUpdated.textContent = new Date().toLocaleTimeString();
     }
 
+    async function loadAlerts() {
+      try {
+        const response = await fetch("/internal/processing-alerts/recent");
+        renderAlerts(await response.json());
+      } catch (error) {
+        alertStatus.innerHTML = `<div class="meta bad">Alert status unavailable: ${escapeHtml(error.message || error)}</div>`;
+      }
+    }
+
     async function loadFallback(forceImageReload = false) {
-      const [cameraResponse, ingestResponse, relayResponse, syncResponse, deltaResponse] = await Promise.all([
+      const [cameraResponse, ingestResponse, relayResponse, syncResponse, alertResponse, deltaResponse] = await Promise.all([
         fetch("/monitoring/cameras"),
         fetch("/monitoring/grpc-ingest"),
         fetch("/monitoring/relay"),
         fetch("/monitoring/sync"),
+        fetch("/internal/processing-alerts/recent"),
         fetch("/debug/timestamp-delta"),
       ]);
       cameras = (await cameraResponse.json()).items || [];
@@ -532,6 +616,7 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       renderIngest(await ingestResponse.json());
       renderRelay(await relayResponse.json());
       renderSync(await syncResponse.json());
+      renderAlerts(await alertResponse.json());
       renderDelta(await deltaResponse.json());
       lastUpdated.textContent = new Date().toLocaleTimeString();
     }
@@ -550,6 +635,7 @@ DEBUG_VIEWER_HTML = """<!doctype html>
     refreshButton.addEventListener("click", () => loadFallback(true));
     initCollapsibles();
     loadFallback(true);
+    window.setInterval(loadAlerts, 1000);
     connectEventStream();
   </script>
 </body>
