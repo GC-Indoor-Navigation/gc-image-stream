@@ -18,9 +18,9 @@ class ProcessingAlertEvent(BaseModel):
     relay_run_id: int | None = Field(default=None, ge=0)
     timestamp_ms: int = Field(gt=0)
     severity: Literal["info", "warning", "danger"]
-    distance_m: float = Field(ge=0)
-    joint: str = Field(min_length=1)
-    obstacle_id: str = Field(default="unknown")
+    distance_m: float | None = Field(default=None, ge=0)
+    joint: str | None = None
+    obstacle_id: str | None = None
     ttl_ms: int = Field(gt=0)
     source: ProcessingAlertSource
 

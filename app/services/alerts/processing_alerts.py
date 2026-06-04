@@ -65,6 +65,8 @@ class ProcessingAlertStore:
                 self.expired_count += 1
                 return record, "expired"
 
+            if len(self._records) == self.max_alerts:
+                self._event_ids.discard(self._records[0].alert.event_id)
             self._records.append(record)
             self._event_ids.add(alert.event_id)
             return record, "accepted"

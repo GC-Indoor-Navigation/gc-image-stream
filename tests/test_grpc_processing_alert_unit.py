@@ -49,6 +49,27 @@ def test_alert_event_round_trip_preserves_payload():
     assert restored.source.HasField("session_id") is True
 
 
+def test_alert_event_allows_missing_measurement_fields():
+    alert = AlertEvent(
+        event_id="alert-without-measurement",
+        frame_set_id=12,
+        timestamp_ms=1_780_502_472_361,
+        severity="warning",
+        ttl_ms=500,
+        source=AlertSource(
+            processor="mmpose_triangulation",
+            camera_devices=["android_device_001"],
+        ),
+    )
+
+    restored = AlertEvent()
+    restored.ParseFromString(alert.SerializeToString())
+
+    assert restored.HasField("distance_m") is False
+    assert restored.HasField("joint") is False
+    assert restored.HasField("obstacle_id") is False
+
+
 def test_alert_ack_round_trip_preserves_fields():
     ack = AlertAck(
         accepted=True,

@@ -84,6 +84,52 @@ def test_internal_processing_alerts_deduplicates_event_id(client):
     assert recent.json()["status"]["duplicate_count"] == 1
 
 
+def test_internal_processing_alerts_accepts_nullable_measurement_fields(client):
+    response = client.post(
+        "/internal/processing-alerts",
+        json=make_alert_payload(
+            event_id="nullable-alert",
+            distance_m=None,
+            joint=None,
+            obstacle_id=None,
+        ),
+    )
+
+    assert response.status_code == 202
+    assert response.json()["accepted"] is True
+
+    recent = client.get("/internal/processing-alerts/recent")
+    item = recent.json()["items"][0]
+
+    assert item["event_id"] == "nullable-alert"
+    assert item["distance_m"] is None
+    assert item["joint"] is None
+    assert item["obstacle_id"] is None
+
+
+def test_internal_processing_alerts_reuses_event_id_after_record_eviction():
+    from app.services.alerts.processing_alerts import (
+        ProcessingAlertStore,
+        current_time_ms,
+    )
+    from app.schemas.processing_alerts import ProcessingAlertEvent
+
+    store = ProcessingAlertStore(max_alerts=1)
+    now_ms = current_time_ms()
+    first = ProcessingAlertEvent(**make_alert_payload(event_id="evicted-alert"))
+    second = ProcessingAlertEvent(**make_alert_payload(event_id="new-alert"))
+
+    _first_record, first_status = store.add_alert(first, now_ms=now_ms)
+    _second_record, second_status = store.add_alert(second, now_ms=now_ms)
+    _third_record, third_status = store.add_alert(first, now_ms=now_ms)
+
+    assert first_status == "accepted"
+    assert second_status == "accepted"
+    assert third_status == "accepted"
+    assert store.status(now_ms=now_ms)["retained_count"] == 1
+    assert store.status(now_ms=now_ms)["duplicate_count"] == 0
+
+
 def test_internal_processing_alerts_excludes_expired_alerts(client):
     response = client.post(
         "/internal/processing-alerts",

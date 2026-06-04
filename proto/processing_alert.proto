@@ -12,9 +12,9 @@ message AlertEvent {
   optional uint64 relay_run_id = 3;
   int64 timestamp_ms = 4;
   string severity = 5;
-  double distance_m = 6;
-  string joint = 7;
-  string obstacle_id = 8;
+  optional double distance_m = 6;
+  optional string joint = 7;
+  optional string obstacle_id = 8;
   uint64 ttl_ms = 9;
   AlertSource source = 10;
 }
