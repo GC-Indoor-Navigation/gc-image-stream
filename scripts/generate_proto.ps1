@@ -6,7 +6,6 @@ New-Item -ItemType File -Force app\infrastructure\grpc\generated\__init__.py | O
   --python_out=app\infrastructure\grpc\generated `
   --grpc_python_out=app\infrastructure\grpc\generated `
   proto\frame_ingest.proto `
-  proto\processing_alert.proto `
   proto\processing_relay.proto
 
 Get-ChildItem app\infrastructure\grpc\generated -Filter *_pb2_grpc.py | ForEach-Object {
