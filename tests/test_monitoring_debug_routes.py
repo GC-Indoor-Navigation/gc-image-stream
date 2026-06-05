@@ -265,6 +265,9 @@ def test_debug_viewer_returns_html(client):
     assert "renderSync(sync)" in response.text
     assert "Processing Alerts" in response.text
     assert 'fetch("/internal/processing-alerts/recent")' in response.text
+    assert 'fetch("/phone/alerts/status")' in response.text
+    assert "Phone Delivery" in response.text
+    assert "Phone Subscribers" in response.text
     assert "renderAlerts" in response.text
     assert "data-collapse-target=\"alertStatus\"" in response.text
     assert "data-collapse-target=\"syncStatus\"" in response.text

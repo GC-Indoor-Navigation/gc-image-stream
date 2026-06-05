@@ -505,23 +505,27 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       return `${(remaining / 1000).toFixed(1)}s`;
     }
 
-    function renderAlerts(payload) {
+    function renderAlerts(payload, deliveryPayload = {}) {
       const status = payload.status || {};
       const items = payload.items || [];
-      const summary = [
+      const delivery = deliveryPayload || {};
+      const subscriptions = delivery.subscriptions || [];
+      const alertSummary = [
         metric("Received", status.received_count ?? 0),
         metric("Active", status.active_count ?? 0, Number(status.active_count || 0) > 0 ? "warn" : "ok"),
         metric("Retained", status.retained_count ?? 0),
         metric("Duplicate", status.duplicate_count ?? 0, Number(status.duplicate_count || 0) > 0 ? "warn" : "ok"),
         metric("Expired", status.expired_count ?? 0, Number(status.expired_count || 0) > 0 ? "warn" : "ok"),
       ].join("");
+      const deliverySummary = [
+        metric("Subscribers", delivery.subscriber_count ?? 0, Number(delivery.subscriber_count || 0) > 0 ? "ok" : ""),
+        metric("Published", delivery.published_count ?? 0),
+        metric("Delivered", delivery.delivered_count ?? 0, Number(delivery.delivered_count || 0) > 0 ? "ok" : ""),
+        metric("Unmatched", delivery.skipped_unmatched_count ?? 0, Number(delivery.skipped_unmatched_count || 0) > 0 ? "warn" : "ok"),
+        metric("Expired Skip", delivery.skipped_expired_count ?? 0, Number(delivery.skipped_expired_count || 0) > 0 ? "warn" : "ok"),
+      ].join("");
 
-      if (items.length === 0) {
-        alertStatus.innerHTML = `${summary}<div class="meta">No active alerts</div>`;
-        return;
-      }
-
-      const rows = items.map((item) => {
+      const alertRows = items.map((item) => {
         const routing = item.routing || {};
         const source = item.source || {};
         const cameras = routing.camera_devices || source.camera_devices || [];
@@ -544,7 +548,34 @@ DEBUG_VIEWER_HTML = """<!doctype html>
           </div>
         `;
       }).join("");
-      alertStatus.innerHTML = `${summary}${rows}`;
+      const subscriptionRows = subscriptions.map((subscription) => {
+        const devices = subscription.device_ids || [];
+        return `
+          <div class="alert-row">
+            <div class="alert-head">
+              <strong class="ok">phone subscriber</strong>
+              <span class="meta">queue ${escapeHtml(subscription.queue_size ?? 0)}</span>
+            </div>
+            <div class="alert-meta">
+              <span>devices ${escapeHtml(devices.join(", ") || "-")}</span>
+              <span>session ${escapeHtml(subscription.session_id || "-")}</span>
+              <span>delivered ${escapeHtml(subscription.delivered_count ?? 0)} / dropped ${escapeHtml(subscription.dropped_count ?? 0)}</span>
+              <span>last ${escapeHtml(subscription.last_sent_event_id || "-")}</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      alertStatus.innerHTML = [
+        '<div class="meta"><strong>Alert Store</strong></div>',
+        alertSummary,
+        '<div class="meta"><strong>Phone Delivery</strong></div>',
+        deliverySummary,
+        '<div class="meta"><strong>Active Alerts</strong></div>',
+        alertRows || '<div class="meta">No active alerts</div>',
+        '<div class="meta"><strong>Phone Subscribers</strong></div>',
+        subscriptionRows || '<div class="meta">No phone subscribers</div>',
+      ].join("");
     }
 
     function renderDelta(payload) {
@@ -588,20 +619,24 @@ DEBUG_VIEWER_HTML = """<!doctype html>
 
     async function loadAlerts() {
       try {
-        const response = await fetch("/internal/processing-alerts/recent");
-        renderAlerts(await response.json());
+        const [alertResponse, deliveryResponse] = await Promise.all([
+          fetch("/internal/processing-alerts/recent"),
+          fetch("/phone/alerts/status"),
+        ]);
+        renderAlerts(await alertResponse.json(), await deliveryResponse.json());
       } catch (error) {
         alertStatus.innerHTML = `<div class="meta bad">Alert status unavailable: ${escapeHtml(error.message || error)}</div>`;
       }
     }
 
     async function loadFallback(forceImageReload = false) {
-      const [cameraResponse, ingestResponse, relayResponse, syncResponse, alertResponse, deltaResponse] = await Promise.all([
+      const [cameraResponse, ingestResponse, relayResponse, syncResponse, alertResponse, deliveryResponse, deltaResponse] = await Promise.all([
         fetch("/monitoring/cameras"),
         fetch("/monitoring/grpc-ingest"),
         fetch("/monitoring/relay"),
         fetch("/monitoring/sync"),
         fetch("/internal/processing-alerts/recent"),
+        fetch("/phone/alerts/status"),
         fetch("/debug/timestamp-delta"),
       ]);
       cameras = (await cameraResponse.json()).items || [];
@@ -616,7 +651,7 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       renderIngest(await ingestResponse.json());
       renderRelay(await relayResponse.json());
       renderSync(await syncResponse.json());
-      renderAlerts(await alertResponse.json());
+      renderAlerts(await alertResponse.json(), await deliveryResponse.json());
       renderDelta(await deltaResponse.json());
       lastUpdated.textContent = new Date().toLocaleTimeString();
     }
