@@ -5,7 +5,7 @@ from app.schemas.processing_alerts import (
     ProcessingAlertIngestResponse,
     RecentProcessingAlertsResponse,
 )
-from app.services.alerts import processing_alert_store
+from app.services.alerts import phone_alert_delivery_hub, processing_alert_store
 
 
 router = APIRouter(prefix="/internal", tags=["internal"])
@@ -20,6 +20,8 @@ router = APIRouter(prefix="/internal", tags=["internal"])
 )
 def receive_processing_alert(alert: ProcessingAlertEvent):
     record, result = processing_alert_store.add_alert(alert)
+    if result == "accepted":
+        phone_alert_delivery_hub.publish(record)
     return ProcessingAlertIngestResponse(
         accepted=result == "accepted",
         duplicate=result == "duplicate",

@@ -12,6 +12,7 @@ from app.api.routes.debug import router as debug_router
 from app.api.routes.frames import router as frames_router
 from app.api.routes.internal import router as internal_router
 from app.api.routes.monitoring import router as monitoring_router
+from app.api.routes.phone import router as phone_router
 from app.infrastructure.grpc.processing_relay_client import (
     processing_frame_set_relay_service,
     processing_relay_service,
@@ -20,7 +21,7 @@ from app.infrastructure.storage import file_utils
 from app.services.stream.stream_experiment import clear_stream_experiment_recorder
 from app.services.stream.state import stream_state
 from app.services.sync import stream_sync_service
-from app.services.alerts import processing_alert_store
+from app.services.alerts import phone_alert_delivery_hub, processing_alert_store
 
 
 @pytest.fixture
@@ -49,6 +50,7 @@ def session_factory(tmp_path):
 @pytest.fixture
 def app(session_factory, storage_dir):
     stream_state.clear()
+    phone_alert_delivery_hub.clear()
     processing_alert_store.clear()
     processing_relay_service.clear()
     processing_frame_set_relay_service.clear()
@@ -58,6 +60,7 @@ def app(session_factory, storage_dir):
     test_app.include_router(capture_router)
     test_app.include_router(frames_router)
     test_app.include_router(internal_router)
+    test_app.include_router(phone_router)
     test_app.include_router(monitoring_router)
     test_app.include_router(debug_router)
 
@@ -71,6 +74,7 @@ def app(session_factory, storage_dir):
     test_app.dependency_overrides[get_db] = override_get_db
     yield test_app
     stream_state.clear()
+    phone_alert_delivery_hub.clear()
     processing_alert_store.clear()
     processing_relay_service.clear()
     processing_frame_set_relay_service.clear()
