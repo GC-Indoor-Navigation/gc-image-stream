@@ -4,6 +4,11 @@ import json
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
+from app.core.env import get_optional_str_env
+from app.core.phone_alerts import (
+    parse_phone_alert_subscriptions,
+    resolve_phone_alert_camera_device_ids,
+)
 from app.services.alerts import (
     phone_alert_delivery_hub,
     processing_alert_store,
@@ -26,6 +31,7 @@ def _sse_event(payload: dict) -> str:
 async def stream_phone_alert_events(
     request: Request,
     device_id: list[str] = Query(default=[]),
+    camera_device_id: list[str] = Query(default=[]),
     session_id: str | None = Query(default=None),
     once: bool = False,
 ):
@@ -35,9 +41,20 @@ async def stream_phone_alert_events(
             status_code=400,
             detail="device_id or session_id is required",
         )
+    subscription_mapping = parse_phone_alert_subscriptions(
+        get_optional_str_env("PHONE_ALERT_SUBSCRIPTIONS"),
+    )
+    camera_device_ids = resolve_phone_alert_camera_device_ids(
+        phone_device_ids=device_ids,
+        explicit_camera_device_ids=[
+            item for item in camera_device_id if item
+        ],
+        subscription_mapping=subscription_mapping,
+    )
 
     subscription = phone_alert_delivery_hub.subscribe(
         device_ids=device_ids,
+        camera_device_ids=camera_device_ids,
         session_id=session_id,
     )
 

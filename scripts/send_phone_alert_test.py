@@ -44,6 +44,7 @@ def build_payload(args) -> dict:
     distance_m = None if args.nullable_fields else args.distance_m
     joint = None if args.nullable_fields else args.joint
     obstacle_id = None if args.nullable_fields else args.obstacle_id
+    camera_device_ids = args.camera_device_id or [args.device_id]
 
     return {
         "event_id": event_id,
@@ -57,7 +58,7 @@ def build_payload(args) -> dict:
         "ttl_ms": args.ttl_ms,
         "source": {
             "processor": args.processor,
-            "camera_devices": [args.device_id],
+            "camera_devices": camera_device_ids,
         },
     }
 
@@ -73,7 +74,8 @@ def print_status_summary(label: str, status: dict, device_id: str):
     for item in matches:
         print(
             "  - "
-            f"devices={','.join(item.get('device_ids', [])) or '-'} "
+            f"phone={','.join(item.get('device_ids', [])) or '-'} "
+            f"cameras={','.join(item.get('camera_device_ids', [])) or '-'} "
             f"queue={item.get('queue_size', 0)} "
             f"delivered={item.get('delivered_count', 0)} "
             f"last={item.get('last_sent_event_id') or '-'}"
@@ -92,7 +94,13 @@ def parse_args():
     parser.add_argument(
         "--device-id",
         required=True,
-        help="Android user-mode device id. Must match source.camera_devices.",
+        help="Android user-mode device id.",
+    )
+    parser.add_argument(
+        "--camera-device-id",
+        action="append",
+        default=[],
+        help="Camera device id to include in alert source. Repeat for multiple cameras.",
     )
     parser.add_argument("--event-id", default="", help="Alert event id. Defaults to a timestamped id.")
     parser.add_argument("--severity", default="warning", choices=["info", "warning", "danger"])

@@ -15,6 +15,7 @@ from app.services.alerts.processing_alerts import (
 class PhoneAlertSubscription:
     subscription_id: str
     device_ids: tuple[str, ...]
+    camera_device_ids: tuple[str, ...]
     session_id: str | None
     connected_at_ms: int
     queue: queue.Queue[dict] = field(default_factory=lambda: queue.Queue(maxsize=50))
@@ -43,6 +44,7 @@ class PhoneAlertSubscription:
         return {
             "subscription_id": self.subscription_id,
             "device_ids": list(self.device_ids),
+            "camera_device_ids": list(self.camera_device_ids),
             "session_id": self.session_id,
             "connected_at_ms": self.connected_at_ms,
             "queue_size": self.queue.qsize(),
@@ -65,11 +67,13 @@ class PhoneAlertDeliveryHub:
         self,
         *,
         device_ids: list[str],
+        camera_device_ids: list[str] | None = None,
         session_id: str | None = None,
     ) -> PhoneAlertSubscription:
         subscription = PhoneAlertSubscription(
             subscription_id=str(uuid4()),
             device_ids=tuple(dict.fromkeys(device_ids)),
+            camera_device_ids=tuple(dict.fromkeys(camera_device_ids or device_ids)),
             session_id=session_id,
             connected_at_ms=current_time_ms(),
         )
@@ -115,7 +119,7 @@ class PhoneAlertDeliveryHub:
         if subscription.session_id and routing.get("session_id") == subscription.session_id:
             return True
         alert_devices = set(record.alert.source.camera_devices)
-        return bool(alert_devices.intersection(subscription.device_ids))
+        return bool(alert_devices.intersection(subscription.camera_device_ids))
 
     def status(self) -> dict:
         with self._lock:

@@ -550,6 +550,7 @@ DEBUG_VIEWER_HTML = """<!doctype html>
       }).join("");
       const subscriptionRows = subscriptions.map((subscription) => {
         const devices = subscription.device_ids || [];
+        const cameras = subscription.camera_device_ids || [];
         return `
           <div class="alert-row">
             <div class="alert-head">
@@ -557,7 +558,8 @@ DEBUG_VIEWER_HTML = """<!doctype html>
               <span class="meta">queue ${escapeHtml(subscription.queue_size ?? 0)}</span>
             </div>
             <div class="alert-meta">
-              <span>devices ${escapeHtml(devices.join(", ") || "-")}</span>
+              <span>phone ${escapeHtml(devices.join(", ") || "-")}</span>
+              <span>cameras ${escapeHtml(cameras.join(", ") || "-")}</span>
               <span>session ${escapeHtml(subscription.session_id || "-")}</span>
               <span>delivered ${escapeHtml(subscription.delivered_count ?? 0)} / dropped ${escapeHtml(subscription.dropped_count ?? 0)}</span>
               <span>last ${escapeHtml(subscription.last_sent_event_id || "-")}</span>
