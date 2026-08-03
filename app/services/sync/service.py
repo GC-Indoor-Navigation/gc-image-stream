@@ -1,3 +1,5 @@
+from threading import RLock
+
 from app.services.sync.frame_buffer import SyncFrameBufferManager, build_buffer_key
 from app.services.sync.matcher import SyncMatcher
 from app.services.sync.models import SyncInputFrame, SynchronizedFrameSet
@@ -5,6 +7,7 @@ from app.services.sync.models import SyncInputFrame, SynchronizedFrameSet
 
 class StreamSyncService:
     def __init__(self):
+        self._lock = RLock()
         self.enabled = False
         self.expected_cameras: list[str] = []
         self.window_ms = 50
@@ -19,36 +22,39 @@ class StreamSyncService:
         buffer_size: int = 120,
         recent_limit: int = 20,
     ):
-        self.enabled = enabled
-        self.expected_cameras = list(expected_cameras)
-        self.window_ms = window_ms
-        self.buffer_manager = SyncFrameBufferManager(buffer_size=buffer_size)
-        self.matcher = (
-            SyncMatcher(
-                buffer_manager=self.buffer_manager,
-                expected_cameras=self.expected_cameras,
-                window_ms=window_ms,
-                recent_limit=recent_limit,
+        with self._lock:
+            self.enabled = enabled
+            self.expected_cameras = list(expected_cameras)
+            self.window_ms = window_ms
+            self.buffer_manager = SyncFrameBufferManager(buffer_size=buffer_size)
+            self.matcher = (
+                SyncMatcher(
+                    buffer_manager=self.buffer_manager,
+                    expected_cameras=self.expected_cameras,
+                    window_ms=window_ms,
+                    recent_limit=recent_limit,
+                )
+                if enabled
+                else None
             )
-            if enabled
-            else None
-        )
 
     def handle_frame(self, frame: SyncInputFrame) -> SynchronizedFrameSet | None:
-        if not self.enabled or self.matcher is None:
-            return None
+        with self._lock:
+            if not self.enabled or self.matcher is None:
+                return None
 
-        stored = self.buffer_manager.add_frame(frame)
-        if stored is None:
-            return None
-        return self.matcher.try_match(stored)
+            stored = self.buffer_manager.add_frame(frame)
+            if stored is None:
+                return None
+            return self.matcher.try_match(stored)
 
     def status(self) -> dict:
-        buffer_snapshot = self.buffer_manager.snapshot()
-        sync_status = (
-            self.matcher.status()
-            if self.matcher is not None
-            else {
+        with self._lock:
+            buffer_snapshot = self.buffer_manager.snapshot()
+            sync_status = (
+                self.matcher.status()
+                if self.matcher is not None
+                else {
                 "matched_count": 0,
                 "missed_count": 0,
                 "duplicate_count": 0,
@@ -68,26 +74,27 @@ class StreamSyncService:
                 "last_archive_state": None,
                 "last_archive_error": None,
                 "archive_degraded_count": 0,
+                }
+            )
+            sync_progress = build_sync_progress(
+                buffer_snapshot=buffer_snapshot,
+                expected_cameras=self.expected_cameras,
+                matched_count=sync_status["matched_count"],
+            )
+            return {
+                "enabled": self.enabled,
+                "expected_cameras": list(self.expected_cameras),
+                "window_ms": self.window_ms,
+                "buffer": buffer_snapshot,
+                **sync_progress,
+                **sync_status,
             }
-        )
-        sync_progress = build_sync_progress(
-            buffer_snapshot=buffer_snapshot,
-            expected_cameras=self.expected_cameras,
-            matched_count=sync_status["matched_count"],
-        )
-        return {
-            "enabled": self.enabled,
-            "expected_cameras": list(self.expected_cameras),
-            "window_ms": self.window_ms,
-            "buffer": buffer_snapshot,
-            **sync_progress,
-            **sync_status,
-        }
 
     def recent_frame_sets(self) -> list[SynchronizedFrameSet]:
-        if self.matcher is None:
-            return []
-        return self.matcher.recent_frame_sets()
+        with self._lock:
+            if self.matcher is None:
+                return []
+            return self.matcher.recent_frame_sets()
 
     def finalize_archive_state(
         self,
@@ -96,13 +103,14 @@ class StreamSyncService:
         state: str,
         error: str | None,
     ) -> SynchronizedFrameSet:
-        if self.matcher is None:
-            return frame_set
-        return self.matcher.finalize_archive_state(
-            frame_set,
-            state=state,
-            error=error,
-        )
+        with self._lock:
+            if self.matcher is None:
+                return frame_set
+            return self.matcher.finalize_archive_state(
+                frame_set,
+                state=state,
+                error=error,
+            )
 
     def finalize_frame_archive(
         self,
@@ -114,16 +122,17 @@ class StreamSyncService:
         archive_state: str,
         archive_error: str | None,
     ) -> SynchronizedFrameSet | None:
-        stored = self.buffer_manager.finalize_archive(
-            build_buffer_key(frame),
-            frame_id=frame_id,
-            file_path=file_path,
-            archive_state=archive_state,
-            archive_error=archive_error,
-        )
-        if frame_set is None or stored is None or self.matcher is None:
-            return frame_set
-        return self.matcher.replace_frame_member(frame_set, stored)
+        with self._lock:
+            stored = self.buffer_manager.finalize_archive(
+                build_buffer_key(frame),
+                frame_id=frame_id,
+                file_path=file_path,
+                archive_state=archive_state,
+                archive_error=archive_error,
+            )
+            if frame_set is None or stored is None or self.matcher is None:
+                return frame_set
+            return self.matcher.replace_frame_member(frame_set, stored)
 
     def clear(self):
         self.configure(
