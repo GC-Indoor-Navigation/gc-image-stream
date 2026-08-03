@@ -2,14 +2,70 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Frame
+from app.services.identity import (
+    IDENTITY_MODE_LEGACY,
+    IDENTITY_MODE_V2,
+    build_source_frame_uid,
+)
+
+
+class FrameIntegrityError(ValueError):
+    pass
 
 
 # 프레임을 저장하고, 중복이면 기존 레코드를 반환한다.
-def create_frame(db: Session, device_id: str, timestamp: int, file_path: str) -> Frame:
+def create_frame(
+    db: Session,
+    device_id: str,
+    timestamp: int,
+    file_path: str,
+    *,
+    source_session_id: str | None = None,
+    camera_stream_id: str | None = None,
+    frame_sequence: int | None = None,
+    content_digest: str | None = None,
+) -> Frame:
+    has_natural_identity = (
+        bool(source_session_id and source_session_id.strip())
+        and bool(camera_stream_id and camera_stream_id.strip())
+        and frame_sequence is not None
+    )
+    source_frame_uid = (
+        build_source_frame_uid(
+            source_session_id=source_session_id,
+            camera_stream_id=camera_stream_id,
+            frame_sequence=frame_sequence,
+        )
+        if has_natural_identity
+        else None
+    )
+    identity_mode = (
+        IDENTITY_MODE_V2
+        if has_natural_identity and bool(content_digest and content_digest.strip())
+        else IDENTITY_MODE_LEGACY
+    )
+
+    existing = _find_existing_frame(
+        db,
+        source_frame_uid=source_frame_uid,
+        device_id=device_id,
+        timestamp=timestamp,
+        identity_mode=identity_mode,
+    )
+    if existing is not None:
+        _verify_duplicate_digest(existing, content_digest)
+        return existing
+
     frame = Frame(
         device_id=device_id,
         timestamp=timestamp,
         file_path=file_path,
+        source_session_id=source_session_id,
+        camera_stream_id=camera_stream_id,
+        frame_sequence=frame_sequence,
+        source_frame_uid=source_frame_uid,
+        content_digest=content_digest,
+        identity_mode=identity_mode,
     )
     db.add(frame)
     try:
@@ -18,14 +74,50 @@ def create_frame(db: Session, device_id: str, timestamp: int, file_path: str) ->
         return frame
     except IntegrityError:
         db.rollback()
-        existing = (
-            db.query(Frame)
-            .filter(Frame.device_id == device_id, Frame.timestamp == timestamp)
-            .first()
+        existing = _find_existing_frame(
+            db,
+            source_frame_uid=source_frame_uid,
+            device_id=device_id,
+            timestamp=timestamp,
+            identity_mode=identity_mode,
         )
         if existing is not None:
+            _verify_duplicate_digest(existing, content_digest)
             return existing
         raise
+
+
+def _find_existing_frame(
+    db: Session,
+    *,
+    source_frame_uid: str | None,
+    device_id: str,
+    timestamp: int,
+    identity_mode: str,
+) -> Frame | None:
+    if source_frame_uid is not None:
+        return db.query(Frame).filter(Frame.source_frame_uid == source_frame_uid).first()
+    return (
+        db.query(Frame)
+        .filter(
+            Frame.device_id == device_id,
+            Frame.timestamp == timestamp,
+            Frame.identity_mode == identity_mode,
+        )
+        .first()
+    )
+
+
+def _verify_duplicate_digest(frame: Frame, content_digest: str | None) -> None:
+    if (
+        frame.source_frame_uid is not None
+        and frame.content_digest is not None
+        and content_digest is not None
+        and frame.content_digest != content_digest
+    ):
+        raise FrameIntegrityError(
+            "source_frame_uid was reused with a different content digest"
+        )
 
 
 # 최신 순으로 프레임 목록을 조회한다.

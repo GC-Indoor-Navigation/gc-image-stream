@@ -18,9 +18,15 @@ from app.infrastructure.grpc.processing_relay_client import (
 )
 from app.infrastructure.storage.file_utils import build_frame_path
 from app.services.frames.service import create_frame
+from app.services.identity import canonical_camera_stream_id, sha256_bytes
 from app.services.stream.stream_experiment import get_stream_experiment_recorder
 from app.services.stream.state import StreamState, stream_state
-from app.services.sync import StreamSyncService, SyncInputFrame, stream_sync_service
+from app.services.sync import (
+    StreamSyncService,
+    SyncInputFrame,
+    persist_frame_set_manifest,
+    stream_sync_service,
+)
 
 
 def resolve_ingest_relay_mode(
@@ -46,6 +52,7 @@ def ingest_frame(
     content_type: str = "image/jpeg",
     filename: str | None = None,
     session_id: str | None = None,
+    camera_stream_id: str | None = None,
     state: StreamState = stream_state,
     relay_service: ProcessingRelayService = processing_relay_service,
     sync_service: StreamSyncService = stream_sync_service,
@@ -63,11 +70,22 @@ def ingest_frame(
     )
     Path(save_path).write_bytes(image_bytes)
 
+    resolved_camera_stream_id = (
+        canonical_camera_stream_id(device_id, camera_stream_id)
+        if session_id and sequence is not None
+        else camera_stream_id
+    )
+    content_digest = sha256_bytes(image_bytes)
+
     frame = create_frame(
         db,
         device_id=device_id,
         timestamp=timestamp_ms,
         file_path=save_path,
+        source_session_id=session_id,
+        camera_stream_id=resolved_camera_stream_id,
+        frame_sequence=sequence,
+        content_digest=content_digest,
     )
 
     camera_state = state.update_frame(
@@ -108,7 +126,17 @@ def ingest_frame(
             content_type=content_type,
             image_bytes=image_bytes,
             file_path=frame.file_path,
+            source_session_id=frame.source_session_id,
+            camera_stream_id=frame.camera_stream_id,
+            source_frame_uid=frame.source_frame_uid,
+            content_digest=frame.content_digest,
+            identity_mode=frame.identity_mode,
         )
+    )
+    manifest_persisted = (
+        persist_frame_set_manifest(db, synchronized_frame_set)
+        if synchronized_frame_set is not None
+        else False
     )
     frame_set_relay_enqueued = (
         frame_set_relay_service.enqueue_synchronized_frame_set(synchronized_frame_set)
@@ -134,5 +162,6 @@ def ingest_frame(
         "relay_enqueued": relay_enqueued,
         "relay_mode": selected_relay_mode,
         "synchronized_frame_set": synchronized_frame_set,
+        "manifest_persisted": manifest_persisted,
         "frame_set_relay_enqueued": frame_set_relay_enqueued,
     }

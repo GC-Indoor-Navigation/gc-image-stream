@@ -1,8 +1,17 @@
 from collections import deque
 from heapq import heappop, heappush
+from uuid import uuid4
 
 from app.services.sync.frame_buffer import SyncFrameBufferManager
 from app.services.sync.models import StoredSyncFrame, SynchronizedFrameSet
+from app.services.identity import (
+    IDENTITY_MODE_LEGACY,
+    IDENTITY_MODE_V2,
+    build_capture_session_id,
+    build_frame_set_uid,
+    build_manifest_digest,
+    canonical_json,
+)
 
 
 class SyncMatcher:
@@ -18,6 +27,8 @@ class SyncMatcher:
         self.window_ms = window_ms
         self.recent_limit = recent_limit
         self._next_frame_set_id = 1
+        self._capture_session_id: str | None = None
+        self._capture_run_id = str(uuid4())
         self._emitted_keys: set[tuple[int, ...]] = set()
         self._used_frame_ids: set[int] = set()
         self._recent_frame_sets: deque[SynchronizedFrameSet] = deque(
@@ -35,6 +46,8 @@ class SyncMatcher:
         self.dropped_stale_count = 0
         self.last_missing_cameras: list[str] = []
         self.last_reason: str | None = None
+        self.last_identity_mode: str | None = None
+        self.legacy_identity_count = 0
 
     def try_match(self, trigger_frame: StoredSyncFrame) -> SynchronizedFrameSet | None:
         if not self.expected_cameras:
@@ -80,13 +93,41 @@ class SyncMatcher:
         self._emitted_keys.add(key)
         self._used_frame_ids.update(key)
 
+        identity_mode, capture_session_id = _resolve_capture_identity(selected)
+        if (
+            capture_session_id is not None
+            and self._capture_session_id is not None
+            and capture_session_id != self._capture_session_id
+        ):
+            self._capture_run_id = str(uuid4())
+            self._next_frame_set_id = 1
+        if capture_session_id is not None:
+            self._capture_session_id = capture_session_id
+
         anchor_timestamp_ms = max(frame.timestamp_ms for frame in selected.values())
+        frame_set_id = self._next_frame_set_id
+        manifest_payload = _build_manifest_payload(
+            capture_session_id=capture_session_id,
+            frames=selected,
+            identity_mode=identity_mode,
+        )
+        manifest_digest = build_manifest_digest(manifest_payload)
         frame_set = SynchronizedFrameSet(
-            frame_set_id=self._next_frame_set_id,
+            frame_set_id=frame_set_id,
             anchor_timestamp_ms=anchor_timestamp_ms,
             max_delta_ms=span_ms,
             frames=selected,
             span_ms=span_ms,
+            capture_session_id=capture_session_id,
+            capture_run_id=self._capture_run_id,
+            frame_set_uid=(
+                build_frame_set_uid(manifest_digest)
+                if identity_mode == IDENTITY_MODE_V2
+                else None
+            ),
+            manifest_digest=manifest_digest,
+            manifest_json=canonical_json(manifest_payload),
+            identity_mode=identity_mode,
         )
         self._next_frame_set_id += 1
         self.matched_count += 1
@@ -96,6 +137,9 @@ class SyncMatcher:
         self.last_span_ms = span_ms
         self.last_missing_cameras = []
         self.last_reason = "matched"
+        self.last_identity_mode = identity_mode
+        if identity_mode == IDENTITY_MODE_LEGACY:
+            self.legacy_identity_count += 1
         self._recent_frame_sets.append(frame_set)
         self._drop_stale_frames()
         return frame_set
@@ -114,6 +158,10 @@ class SyncMatcher:
             "dropped_stale_count": self.dropped_stale_count,
             "last_missing_cameras": self.last_missing_cameras,
             "last_reason": self.last_reason,
+            "capture_session_id": self._capture_session_id,
+            "capture_run_id": self._capture_run_id,
+            "last_identity_mode": self.last_identity_mode,
+            "legacy_identity_count": self.legacy_identity_count,
         }
 
     def recent_frame_sets(self) -> list[SynchronizedFrameSet]:
@@ -211,3 +259,55 @@ class SyncMatcher:
             counted_exclude_frame_ids=self._used_frame_ids,
         )
         self.dropped_stale_count += dropped_count
+
+
+def _resolve_capture_identity(
+    frames: dict[str, StoredSyncFrame],
+) -> tuple[str, str | None]:
+    if not all(
+        frame.identity_mode == IDENTITY_MODE_V2
+        and frame.source_session_id
+        and frame.camera_stream_id
+        and frame.sequence is not None
+        and frame.source_frame_uid
+        and frame.content_digest
+        for frame in frames.values()
+    ):
+        return IDENTITY_MODE_LEGACY, None
+    return (
+        IDENTITY_MODE_V2,
+        build_capture_session_id(
+            (frame.camera_stream_id, frame.source_session_id)
+            for frame in frames.values()
+        ),
+    )
+
+
+def _build_manifest_payload(
+    *,
+    capture_session_id: str | None,
+    frames: dict[str, StoredSyncFrame],
+    identity_mode: str,
+) -> dict:
+    return {
+        "schema_version": 2,
+        "identity_mode": identity_mode,
+        "capture_session_id": capture_session_id,
+        "members": [
+            {
+                "device_id": frame.device_id,
+                "source_session_id": frame.source_session_id,
+                "camera_stream_id": frame.camera_stream_id,
+                "frame_sequence": frame.sequence,
+                "source_frame_uid": frame.source_frame_uid,
+                "capture_timestamp_ms": frame.timestamp_ms,
+                "content_type": frame.content_type,
+                "image_size": frame.image_size,
+                "content_digest": frame.content_digest,
+            }
+            for frame in sorted(
+                frames.values(),
+                key=lambda item: (item.camera_stream_id or item.device_id),
+            )
+        ],
+    }

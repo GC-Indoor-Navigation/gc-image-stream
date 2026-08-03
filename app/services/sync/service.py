@@ -61,6 +61,10 @@ class StreamSyncService:
                 "dropped_stale_count": 0,
                 "last_missing_cameras": [],
                 "last_reason": None,
+                "capture_session_id": None,
+                "capture_run_id": None,
+                "last_identity_mode": None,
+                "legacy_identity_count": 0,
             }
         )
         sync_progress = build_sync_progress(

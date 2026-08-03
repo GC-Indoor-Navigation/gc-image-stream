@@ -2,6 +2,10 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 
 from app.core.server import DATABASE_URL
+from app.db.migrations import (
+    close_open_capture_runs_after_restart,
+    migrate_frame_identity_schema,
+)
 
 
 engine_kwargs = {}
@@ -17,8 +21,10 @@ SessionLocal = sessionmaker(
 )
 
 
-def ensure_database_schema():
-    inspect(engine)
+def ensure_database_schema(bind=engine):
+    inspect(bind)
+    migrate_frame_identity_schema(bind)
+    close_open_capture_runs_after_restart(bind)
 
 
 def get_db():

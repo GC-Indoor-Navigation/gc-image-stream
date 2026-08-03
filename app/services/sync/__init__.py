@@ -6,6 +6,10 @@ from app.services.sync.models import (
     SynchronizedFrameSet,
 )
 from app.services.sync.service import StreamSyncService, stream_sync_service
+from app.services.sync.manifest_store import (
+    ManifestIntegrityError,
+    persist_frame_set_manifest,
+)
 
 __all__ = [
     "CameraSyncBuffer",
@@ -16,4 +20,6 @@ __all__ = [
     "SyncMatcher",
     "SynchronizedFrameSet",
     "stream_sync_service",
+    "ManifestIntegrityError",
+    "persist_frame_set_manifest",
 ]

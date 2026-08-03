@@ -390,6 +390,7 @@ class GrpcIngestService:
                         content_type=content_type,
                         filename=filename,
                         session_id=session_id,
+                        camera_stream_id=camera_id,
                         state=self.state,
                         relay_service=self.relay_service,
                         received_at_ms=received_at_ms,

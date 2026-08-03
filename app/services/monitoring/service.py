@@ -214,6 +214,11 @@ def get_sync_status():
 def serialize_sync_frame_set(frame_set: SynchronizedFrameSet) -> dict:
     return {
         "frame_set_id": frame_set.frame_set_id,
+        "frame_set_uid": frame_set.frame_set_uid,
+        "capture_session_id": frame_set.capture_session_id,
+        "capture_run_id": frame_set.capture_run_id,
+        "identity_mode": frame_set.identity_mode,
+        "manifest_digest": frame_set.manifest_digest,
         "anchor_timestamp_ms": frame_set.anchor_timestamp_ms,
         "max_delta_ms": frame_set.max_delta_ms,
         "span_ms": frame_set.span_ms
@@ -228,6 +233,10 @@ def serialize_sync_frame_set(frame_set: SynchronizedFrameSet) -> dict:
                 "content_type": frame.content_type,
                 "image_size": frame.image_size,
                 "file_path": frame.file_path,
+                "source_session_id": frame.source_session_id,
+                "camera_stream_id": frame.camera_stream_id,
+                "source_frame_uid": frame.source_frame_uid,
+                "content_digest": frame.content_digest,
             }
             for device_id, frame in frame_set.frames.items()
         },

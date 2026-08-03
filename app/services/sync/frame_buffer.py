@@ -107,6 +107,11 @@ class SyncFrameBufferManager:
             image_bytes=frame.image_bytes,
             image_size=len(frame.image_bytes),
             file_path=frame.file_path,
+            source_session_id=frame.source_session_id,
+            camera_stream_id=frame.camera_stream_id,
+            source_frame_uid=frame.source_frame_uid,
+            content_digest=frame.content_digest,
+            identity_mode=frame.identity_mode,
         )
 
         with self._lock:
