@@ -36,6 +36,10 @@ def persist_frame_archive(
     camera_stream_id: str | None,
     frame_sequence: int | None,
     content_digest: str,
+    content_type: str | None = None,
+    received_at_ms: int | None = None,
+    capture_config_digest: str | None = None,
+    capture_metadata_json: str | None = None,
     initial_error: str | None = None,
     writer: ArchiveWriter | None = None,
 ) -> FrameArchiveOutcome:
@@ -65,6 +69,10 @@ def persist_frame_archive(
             archive_state=state,
             archive_error=error,
             file_size=len(image_bytes) if file_durable else None,
+            content_type=content_type,
+            received_at_ms=received_at_ms,
+            capture_config_digest=capture_config_digest,
+            capture_metadata_json=capture_metadata_json,
         )
     except Exception as exc:
         db.rollback()

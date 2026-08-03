@@ -14,6 +14,10 @@ FRAME_V2_COLUMNS = {
     "archive_state",
     "archive_error",
     "file_size",
+    "content_type",
+    "received_at_ms",
+    "capture_config_digest",
+    "capture_metadata_json",
 }
 
 
@@ -58,6 +62,10 @@ def migrate_frame_identity_schema(engine: Engine) -> bool:
                 archive_state VARCHAR NOT NULL DEFAULT 'ARCHIVE_DURABLE',
                 archive_error VARCHAR,
                 file_size BIGINT,
+                content_type VARCHAR,
+                received_at_ms BIGINT,
+                capture_config_digest VARCHAR,
+                capture_metadata_json TEXT,
                 CONSTRAINT uq_frame_source_uid UNIQUE (source_frame_uid),
                 CONSTRAINT uq_frame_source_identity UNIQUE (
                     source_session_id,
@@ -98,6 +106,22 @@ def migrate_frame_identity_schema(engine: Engine) -> bool:
                 "archive_error" if "archive_error" in available else "NULL"
             ),
             "file_size": "file_size" if "file_size" in available else "NULL",
+            "content_type": (
+                "content_type" if "content_type" in available else "NULL"
+            ),
+            "received_at_ms": (
+                "received_at_ms" if "received_at_ms" in available else "NULL"
+            ),
+            "capture_config_digest": (
+                "capture_config_digest"
+                if "capture_config_digest" in available
+                else "NULL"
+            ),
+            "capture_metadata_json": (
+                "capture_metadata_json"
+                if "capture_metadata_json" in available
+                else "NULL"
+            ),
         }
         connection.exec_driver_sql(
             f"""
@@ -114,7 +138,11 @@ def migrate_frame_identity_schema(engine: Engine) -> bool:
                 identity_mode,
                 archive_state,
                 archive_error,
-                file_size
+                file_size,
+                content_type,
+                received_at_ms,
+                capture_config_digest,
+                capture_metadata_json
             )
             SELECT
                 id,
@@ -129,7 +157,11 @@ def migrate_frame_identity_schema(engine: Engine) -> bool:
                 {select_values['identity_mode']},
                 {select_values['archive_state']},
                 {select_values['archive_error']},
-                {select_values['file_size']}
+                {select_values['file_size']},
+                {select_values['content_type']},
+                {select_values['received_at_ms']},
+                {select_values['capture_config_digest']},
+                {select_values['capture_metadata_json']}
             FROM frames
             """
         )
@@ -161,20 +193,20 @@ def migrate_manifest_archive_schema(engine: Engine) -> bool:
         column["name"]
         for column in inspector.get_columns("frame_set_manifests")
     }
-    missing = {"archive_state", "archive_error"} - columns
+    required = {
+        "archive_state": "VARCHAR NOT NULL DEFAULT 'ARCHIVE_DURABLE'",
+        "archive_error": "VARCHAR",
+        "sync_window_ms": "BIGINT NOT NULL DEFAULT 0",
+        "synchronized_at_ms": "BIGINT NOT NULL DEFAULT 0",
+        "member_count": "INTEGER NOT NULL DEFAULT 0",
+    }
+    missing = set(required) - columns
     if not missing:
         return False
     with engine.begin() as connection:
-        if "archive_state" in missing:
+        for name in sorted(missing):
             connection.exec_driver_sql(
-                """
-                ALTER TABLE frame_set_manifests
-                ADD COLUMN archive_state VARCHAR NOT NULL DEFAULT 'ARCHIVE_DURABLE'
-                """
-            )
-        if "archive_error" in missing:
-            connection.exec_driver_sql(
-                "ALTER TABLE frame_set_manifests ADD COLUMN archive_error VARCHAR"
+                f"ALTER TABLE frame_set_manifests ADD COLUMN {name} {required[name]}"
             )
     return True
 

@@ -11,6 +11,7 @@ from app.infrastructure.grpc.processing_relay_client import (
 from app.models import (
     ArchiveReconciliationIssue,
     Frame,
+    FrameSetDeliveryProjection,
     FrameSetManifest,
 )
 from app.services.frames.service import create_frame
@@ -111,6 +112,7 @@ def test_reconciliation_marks_missing_and_corrupt_data_and_lists_orphans(
         db.refresh(corrupt)
         db.refresh(missing)
         manifest = db.query(FrameSetManifest).one()
+        projection = db.query(FrameSetDeliveryProjection).one()
         issue_types = {
             issue.issue_type
             for issue in db.query(ArchiveReconciliationIssue).all()
@@ -122,7 +124,9 @@ def test_reconciliation_marks_missing_and_corrupt_data_and_lists_orphans(
         assert report.partial_files == 1
         assert corrupt.archive_error == "DIGEST_MISMATCH"
         assert missing.archive_error == "MISSING_FILE"
-        assert manifest.archive_state == "ARCHIVE_DEGRADED_LIVE_ONLY"
+        assert manifest.archive_state == "ARCHIVE_DURABLE"
+        assert projection.archive_state == "ARCHIVE_DEGRADED_LIVE_ONLY"
+        assert projection.last_reason == "DIGEST_MISMATCH"
         assert {"DIGEST_MISMATCH", "MISSING_FILE", "ORPHAN_FILE", "PARTIAL_TEMP_FILE"} <= issue_types
     finally:
         db.close()
@@ -156,6 +160,12 @@ def test_manifest_archive_columns_migrate_additively(tmp_path):
             "SELECT archive_state FROM frame_set_manifests"
         ).scalar_one()
 
-    assert {"archive_state", "archive_error"} <= columns
+    assert {
+        "archive_state",
+        "archive_error",
+        "sync_window_ms",
+        "synchronized_at_ms",
+        "member_count",
+    } <= columns
     assert state == "ARCHIVE_DURABLE"
     engine.dispose()

@@ -4,7 +4,13 @@ import time
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import CaptureRun, CaptureSession, FrameSetManifest, FrameSetMember
+from app.models import (
+    CaptureRun,
+    CaptureSession,
+    FrameSetDeliveryProjection,
+    FrameSetManifest,
+    FrameSetMember,
+)
 from app.services.identity import IDENTITY_MODE_V2
 from app.services.sync.models import SynchronizedFrameSet
 
@@ -26,9 +32,14 @@ def persist_frame_set_manifest(
     existing = db.get(FrameSetManifest, frame_set.frame_set_uid)
     if existing is not None:
         _verify_existing_manifest(existing, frame_set)
+        if db.get(FrameSetDeliveryProjection, frame_set.frame_set_uid) is None:
+            db.add(_new_delivery_projection(frame_set.frame_set_uid))
+            db.commit()
         return False
 
-    timestamp_ms = created_at_ms or int(time.time() * 1000)
+    timestamp_ms = (
+        created_at_ms if created_at_ms is not None else int(time.time() * 1000)
+    )
     open_sessions = (
         db.query(CaptureSession)
         .filter(
@@ -80,6 +91,26 @@ def persist_frame_set_manifest(
             "capture_run_id was reused with a different capture_session_id"
         )
 
+    eligible_rows = (
+        db.query(FrameSetDeliveryProjection, FrameSetManifest)
+        .join(
+            FrameSetManifest,
+            FrameSetManifest.frame_set_uid
+            == FrameSetDeliveryProjection.frame_set_uid,
+        )
+        .filter(FrameSetDeliveryProjection.live_state == "ELIGIBLE")
+        .all()
+    )
+    newer_eligible_exists = any(
+        existing_manifest.synchronized_at_ms > frame_set.synchronized_at_ms
+        for _, existing_manifest in eligible_rows
+    )
+    if not newer_eligible_exists:
+        for projection, _ in eligible_rows:
+            projection.live_state = "SUPERSEDED_BEFORE_OFFER"
+            projection.last_reason = "NEWER_FRAME_SET_AVAILABLE"
+            projection.updated_at_ms = timestamp_ms
+
     freshness_origin_ms = min(
         frame.timestamp_ms for frame in frame_set.frames.values()
     )
@@ -94,8 +125,27 @@ def persist_frame_set_manifest(
         manifest_digest=frame_set.manifest_digest,
         manifest_json=frame_set.manifest_json,
         created_at_ms=timestamp_ms,
+        sync_window_ms=frame_set.sync_window_ms,
+        synchronized_at_ms=frame_set.synchronized_at_ms,
+        member_count=frame_set.member_count,
     )
     db.add(manifest)
+    db.add(
+        _new_delivery_projection(
+            frame_set.frame_set_uid,
+            updated_at_ms=timestamp_ms,
+            live_state=(
+                "SUPERSEDED_BEFORE_OFFER"
+                if newer_eligible_exists
+                else "ELIGIBLE"
+            ),
+            reason=(
+                "NEWER_FRAME_SET_AVAILABLE"
+                if newer_eligible_exists
+                else None
+            ),
+        )
+    )
     db.add_all(
         [
             FrameSetMember(
@@ -129,6 +179,79 @@ def persist_frame_set_manifest(
         raise ManifestIntegrityError(
             "manifest identity conflicts with existing durable data"
         ) from exc
+
+
+def update_delivery_projection(
+    db: Session,
+    frame_set_uid: str,
+    *,
+    archive_state: str | None = None,
+    live_state: str | None = None,
+    legacy_relay_state: str | None = None,
+    reason: str | None = None,
+    updated_at_ms: int | None = None,
+) -> bool:
+    projection = db.get(FrameSetDeliveryProjection, frame_set_uid)
+    if projection is None:
+        if db.get(FrameSetManifest, frame_set_uid) is None:
+            return False
+        projection = _new_delivery_projection(frame_set_uid)
+        db.add(projection)
+    if archive_state is not None:
+        projection.archive_state = archive_state
+    if live_state is not None:
+        projection.live_state = live_state
+    if legacy_relay_state is not None:
+        projection.legacy_relay_state = legacy_relay_state
+    if reason is not None:
+        projection.last_reason = reason
+    projection.updated_at_ms = (
+        updated_at_ms if updated_at_ms is not None else int(time.time() * 1000)
+    )
+    db.commit()
+    return True
+
+
+def get_newest_eligible_manifest(db: Session) -> FrameSetManifest | None:
+    return (
+        db.query(FrameSetManifest)
+        .join(
+            FrameSetDeliveryProjection,
+            FrameSetDeliveryProjection.frame_set_uid
+            == FrameSetManifest.frame_set_uid,
+        )
+        .filter(
+            FrameSetDeliveryProjection.archive_state == "ARCHIVE_DURABLE",
+            FrameSetDeliveryProjection.live_state == "ELIGIBLE",
+        )
+        .order_by(
+            FrameSetManifest.synchronized_at_ms.desc(),
+            FrameSetManifest.created_at_ms.desc(),
+            FrameSetManifest.frame_set_uid.desc(),
+        )
+        .first()
+    )
+
+
+def _new_delivery_projection(
+    frame_set_uid: str,
+    *,
+    updated_at_ms: int | None = None,
+    live_state: str = "ELIGIBLE",
+    reason: str | None = None,
+) -> FrameSetDeliveryProjection:
+    return FrameSetDeliveryProjection(
+        frame_set_uid=frame_set_uid,
+        archive_state="ARCHIVE_DURABLE",
+        live_state=live_state,
+        legacy_relay_state="NOT_ENQUEUED",
+        last_reason=reason,
+        updated_at_ms=(
+            updated_at_ms
+            if updated_at_ms is not None
+            else int(time.time() * 1000)
+        ),
+    )
 
 
 def _validate_v2_frame_set(frame_set: SynchronizedFrameSet) -> None:

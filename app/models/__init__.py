@@ -4,6 +4,7 @@ from app.models.frame_set_manifest import (
     CaptureRun,
     CaptureSession,
     FrameSetManifest,
+    FrameSetDeliveryProjection,
     FrameSetMember,
 )
 
@@ -13,5 +14,6 @@ __all__ = [
     "CaptureRun",
     "CaptureSession",
     "FrameSetManifest",
+    "FrameSetDeliveryProjection",
     "FrameSetMember",
 ]

@@ -19,7 +19,12 @@ from app.infrastructure.grpc.processing_relay_client import (
 )
 from app.infrastructure.storage.file_utils import build_frame_path
 from app.services.frames.service import resolve_frame_identity
-from app.services.identity import canonical_camera_stream_id, sha256_bytes
+from app.services.identity import (
+    build_capture_config_digest,
+    canonical_camera_stream_id,
+    canonical_json,
+    sha256_bytes,
+)
 from app.services.ingest.archive import (
     ARCHIVE_DEGRADED_LIVE_ONLY,
     ARCHIVE_DURABLE,
@@ -34,6 +39,7 @@ from app.services.sync import (
     SyncInputFrame,
     persist_frame_set_manifest,
     stream_sync_service,
+    update_delivery_projection,
 )
 
 
@@ -71,8 +77,16 @@ def ingest_frame(
     relay_mode: str | None = None,
     received_at_ms: int | None = None,
     archive_writer: ArchiveWriter | None = None,
+    capture_metadata: dict | None = None,
 ):
     started_at = time.monotonic()
+    resolved_received_at_ms = (
+        received_at_ms
+        if received_at_ms is not None
+        else int(time.time() * 1000)
+    )
+    capture_metadata_json = canonical_json(capture_metadata or {})
+    capture_config_digest = build_capture_config_digest(capture_metadata)
     target_filename = filename or f"{device_id}_{timestamp_ms}.jpg"
     resolved_camera_stream_id = (
         canonical_camera_stream_id(device_id, camera_stream_id)
@@ -100,6 +114,9 @@ def ingest_frame(
         content_digest=content_digest,
         identity_mode=identity_mode,
         archive_state=ARCHIVE_PENDING,
+        received_at_ms=resolved_received_at_ms,
+        capture_config_digest=capture_config_digest,
+        capture_metadata_json=capture_metadata_json,
     )
 
     selected_relay_mode = resolve_ingest_relay_mode(
@@ -141,6 +158,10 @@ def ingest_frame(
         camera_stream_id=resolved_camera_stream_id,
         frame_sequence=sequence,
         content_digest=content_digest,
+        content_type=content_type,
+        received_at_ms=resolved_received_at_ms,
+        capture_config_digest=capture_config_digest,
+        capture_metadata_json=capture_metadata_json,
         initial_error=path_error,
         writer=archive_writer,
     )
@@ -207,6 +228,34 @@ def ingest_frame(
             state=final_archive_state,
             error=final_archive_error,
         )
+        if (
+            synchronized_frame_set.frame_set_uid
+            and final_archive_state == ARCHIVE_DURABLE
+        ):
+            projection_reason = None
+            legacy_relay_state = "NOT_ENQUEUED"
+            if (
+                selected_relay_mode == STREAM_RELAY_MODE_FRAME_SET
+                and frame_set_relay_enqueued
+            ):
+                legacy_relay_state = "FRAME_SET_ENQUEUED"
+            elif selected_relay_mode == STREAM_RELAY_MODE_RAW and relay_enqueued:
+                legacy_relay_state = "RAW_ENQUEUED"
+            elif selected_relay_mode == STREAM_RELAY_MODE_FRAME_SET:
+                projection_reason = "FRAME_SET_RELAY_NOT_ENQUEUED"
+            elif selected_relay_mode == STREAM_RELAY_MODE_RAW:
+                projection_reason = "LEGACY_RAW_RELAY_NOT_ENQUEUED"
+            try:
+                update_delivery_projection(
+                    db,
+                    synchronized_frame_set.frame_set_uid,
+                    archive_state=final_archive_state,
+                    legacy_relay_state=legacy_relay_state,
+                    reason=projection_reason,
+                )
+            except Exception:
+                db.rollback()
+                LOGGER.exception("frame-set delivery projection update failed")
     experiment_recorder = get_stream_experiment_recorder()
     if experiment_recorder is not None:
         experiment_recorder.record_registration(

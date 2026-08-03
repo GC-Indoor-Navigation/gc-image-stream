@@ -117,6 +117,9 @@ class SyncFrameBufferManager:
             identity_mode=frame.identity_mode,
             archive_state=frame.archive_state,
             archive_error=frame.archive_error,
+            received_at_ms=frame.received_at_ms,
+            capture_config_digest=frame.capture_config_digest,
+            capture_metadata_json=frame.capture_metadata_json,
         )
 
         with self._lock:

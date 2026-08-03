@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.models import (
     ArchiveReconciliationIssue,
     Frame,
+    FrameSetDeliveryProjection,
     FrameSetManifest,
     FrameSetMember,
 )
@@ -54,7 +55,12 @@ def reconcile_archive(
             continue
         degraded += 1
         issue_type, detail = issue
-        _degrade_frame_and_manifests(db, frame, issue_type)
+        _degrade_frame_and_projections(
+            db,
+            frame,
+            issue_type,
+            detected_at_ms=timestamp_ms,
+        )
         db.add(
             ArchiveReconciliationIssue(
                 reconciliation_run_id=run_id,
@@ -134,10 +140,12 @@ def _validate_frame_file(frame: Frame, root: Path) -> tuple[str, str] | None:
     return None
 
 
-def _degrade_frame_and_manifests(
+def _degrade_frame_and_projections(
     db: Session,
     frame: Frame,
     issue_type: str,
+    *,
+    detected_at_ms: int,
 ) -> None:
     frame.archive_state = "ARCHIVE_DEGRADED_LIVE_ONLY"
     frame.archive_error = issue_type
@@ -150,14 +158,24 @@ def _degrade_frame_and_manifests(
         )
     ]
     if frame_set_uids:
-        manifests = (
-            db.query(FrameSetManifest)
-            .filter(FrameSetManifest.frame_set_uid.in_(frame_set_uids))
-            .all()
-        )
-        for manifest in manifests:
-            manifest.archive_state = "ARCHIVE_DEGRADED_LIVE_ONLY"
-            manifest.archive_error = issue_type
+        for frame_set_uid in frame_set_uids:
+            projection = db.get(FrameSetDeliveryProjection, frame_set_uid)
+            if (
+                projection is None
+                and db.get(FrameSetManifest, frame_set_uid) is not None
+            ):
+                projection = FrameSetDeliveryProjection(
+                    frame_set_uid=frame_set_uid,
+                    archive_state="ARCHIVE_DURABLE",
+                    live_state="ELIGIBLE",
+                    legacy_relay_state="NOT_ENQUEUED",
+                    updated_at_ms=detected_at_ms,
+                )
+                db.add(projection)
+            if projection is not None:
+                projection.archive_state = "ARCHIVE_DEGRADED_LIVE_ONLY"
+                projection.last_reason = issue_type
+                projection.updated_at_ms = detected_at_ms
 
 
 def _sha256_file(path: Path) -> str:

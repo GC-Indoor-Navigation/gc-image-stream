@@ -17,6 +17,9 @@ class SyncInputFrame:
     identity_mode: str = "LEGACY"
     archive_state: str = "ARCHIVE_PENDING"
     archive_error: str | None = None
+    received_at_ms: int | None = None
+    capture_config_digest: str | None = None
+    capture_metadata_json: str | None = None
 
 
 @dataclass(frozen=True)
@@ -37,6 +40,9 @@ class StoredSyncFrame:
     identity_mode: str = "LEGACY"
     archive_state: str = "ARCHIVE_PENDING"
     archive_error: str | None = None
+    received_at_ms: int | None = None
+    capture_config_digest: str | None = None
+    capture_metadata_json: str | None = None
 
 
 @dataclass(frozen=True)
@@ -54,3 +60,6 @@ class SynchronizedFrameSet:
     identity_mode: str = "LEGACY"
     archive_state: str = "ARCHIVE_PENDING"
     archive_error: str | None = None
+    sync_window_ms: int = 0
+    synchronized_at_ms: int = 0
+    member_count: int = 0

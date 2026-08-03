@@ -20,6 +20,23 @@ FRAME_SET_NAMESPACE = uuid5(
 IDENTITY_MODE_V2 = "V2"
 IDENTITY_MODE_LEGACY = "LEGACY"
 
+CAPTURE_CONFIG_FIELDS = {
+    "exposure_lock_requested",
+    "exposure_time_ns_requested",
+    "focal_length_mm",
+    "focus_lock_requested",
+    "focus_mode",
+    "format",
+    "fps_target",
+    "height",
+    "iso_requested",
+    "manual_exposure_requested",
+    "orientation_deg",
+    "white_balance_lock_requested",
+    "width",
+    "zoom_disabled",
+}
+
 
 def canonical_camera_stream_id(device_id: str, camera_id: str | None = None) -> str:
     device = _required_text("device_id", device_id)
@@ -57,6 +74,15 @@ def build_capture_session_id(
 
 def build_manifest_digest(payload: dict) -> str:
     return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+def build_capture_config_digest(metadata: dict | None) -> str:
+    config = {
+        key: value
+        for key, value in (metadata or {}).items()
+        if key in CAPTURE_CONFIG_FIELDS
+    }
+    return hashlib.sha256(canonical_json(config).encode("utf-8")).hexdigest()
 
 
 def build_frame_set_uid(

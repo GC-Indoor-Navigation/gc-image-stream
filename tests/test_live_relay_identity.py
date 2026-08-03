@@ -358,6 +358,10 @@ def test_legacy_frame_schema_is_backfilled_without_timestamp_uniqueness(tmp_path
         assert v2.id != legacy.id
         assert "source_frame_uid" in columns
         assert "archive_state" in columns
+        assert "content_type" in columns
+        assert "received_at_ms" in columns
+        assert "capture_config_digest" in columns
+        assert "capture_metadata_json" in columns
         assert column_metadata["file_path"]["nullable"] is True
     finally:
         db.close()

@@ -369,6 +369,11 @@ class GrpcIngestService:
                 camera_id = metadata.camera_id or "unknown"
                 filename = f"{internal_device_id}_{camera_id}_{metadata.frame_sequence}.jpg"
                 session_id = metadata.session_id if metadata.HasField("session_id") else None
+                metadata_payload = MessageToDict(
+                    metadata,
+                    preserving_proto_field_name=True,
+                    always_print_fields_with_no_presence=True,
+                )
                 received_at = received_monotonic_ns / 1_000_000_000
                 experiment_recorder = get_stream_experiment_recorder()
                 if experiment_recorder is not None:
@@ -394,6 +399,7 @@ class GrpcIngestService:
                         state=self.state,
                         relay_service=self.relay_service,
                         received_at_ms=received_at_ms,
+                        capture_metadata=metadata_payload,
                     )
                     ingested_at_ms = int(time.time() * 1000)
                     ingested_monotonic_ns = time.monotonic_ns()
@@ -418,11 +424,7 @@ class GrpcIngestService:
                             archived_frame.file_path,
                             {
                                 "service": "gc.collector.v1.FrameIngestService",
-                                "metadata": MessageToDict(
-                                    metadata,
-                                    preserving_proto_field_name=True,
-                                    always_print_fields_with_no_presence=True,
-                                ),
+                                "metadata": metadata_payload,
                                 "server": {
                                     "received_at_ms": received_at_ms,
                                     "received_monotonic_ns": received_monotonic_ns,

@@ -1,4 +1,13 @@
-from sqlalchemy import BigInteger, Column, Index, Integer, String, UniqueConstraint, text
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 
 from app.db import Base
 
@@ -40,3 +49,7 @@ class Frame(Base):
     )
     archive_error = Column(String, nullable=True)
     file_size = Column(BigInteger, nullable=True)
+    content_type = Column(String, nullable=True)
+    received_at_ms = Column(BigInteger, nullable=True)
+    capture_config_digest = Column(String, nullable=True)
+    capture_metadata_json = Column(Text, nullable=True)

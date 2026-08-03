@@ -17,3 +17,6 @@ class FrameResponse(BaseModel):
     archive_state: str = Field(description="Durable or explicit live-only archive state")
     archive_error: str | None = Field(default=None)
     file_size: int | None = Field(default=None)
+    content_type: str | None = Field(default=None)
+    received_at_ms: int | None = Field(default=None)
+    capture_config_digest: str | None = Field(default=None)

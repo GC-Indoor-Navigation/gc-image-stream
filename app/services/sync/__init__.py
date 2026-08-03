@@ -8,7 +8,9 @@ from app.services.sync.models import (
 from app.services.sync.service import StreamSyncService, stream_sync_service
 from app.services.sync.manifest_store import (
     ManifestIntegrityError,
+    get_newest_eligible_manifest,
     persist_frame_set_manifest,
+    update_delivery_projection,
 )
 
 __all__ = [
@@ -21,5 +23,7 @@ __all__ = [
     "SynchronizedFrameSet",
     "stream_sync_service",
     "ManifestIntegrityError",
+    "get_newest_eligible_manifest",
     "persist_frame_set_manifest",
+    "update_delivery_projection",
 ]

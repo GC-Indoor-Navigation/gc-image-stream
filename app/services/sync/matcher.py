@@ -1,6 +1,7 @@
 from collections import deque
 from dataclasses import replace
 from heapq import heappop, heappush
+import time
 from uuid import uuid4
 
 from app.services.sync.frame_buffer import SyncFrameBufferManager
@@ -29,7 +30,9 @@ class SyncMatcher:
         self.recent_limit = recent_limit
         self._next_frame_set_id = 1
         self._capture_session_id: str | None = None
+        self._capture_config_key: tuple[tuple[str, str], ...] | None = None
         self._capture_run_id = str(uuid4())
+        self._last_synchronized_at_ms = 0
         self._emitted_keys: set[tuple[str, ...]] = set()
         self._used_frame_keys: set[str] = set()
         self._recent_frame_sets: deque[SynchronizedFrameSet] = deque(
@@ -97,16 +100,24 @@ class SyncMatcher:
         self._emitted_keys.add(key)
         self._used_frame_keys.update(key)
 
-        identity_mode, capture_session_id = _resolve_capture_identity(selected)
+        (
+            identity_mode,
+            capture_session_id,
+            capture_config_key,
+        ) = _resolve_capture_identity(selected)
         if (
             capture_session_id is not None
             and self._capture_session_id is not None
-            and capture_session_id != self._capture_session_id
+            and (
+                capture_session_id != self._capture_session_id
+                or capture_config_key != self._capture_config_key
+            )
         ):
             self._capture_run_id = str(uuid4())
             self._next_frame_set_id = 1
         if capture_session_id is not None:
             self._capture_session_id = capture_session_id
+            self._capture_config_key = capture_config_key
 
         anchor_timestamp_ms = max(frame.timestamp_ms for frame in selected.values())
         frame_set_id = self._next_frame_set_id
@@ -114,6 +125,9 @@ class SyncMatcher:
             capture_session_id=capture_session_id,
             frames=selected,
             identity_mode=identity_mode,
+            sync_window_ms=self.window_ms,
+            synchronization_span_ms=span_ms,
+            anchor_timestamp_ms=anchor_timestamp_ms,
         )
         manifest_digest = build_manifest_digest(manifest_payload)
         degraded_frames = [
@@ -121,6 +135,11 @@ class SyncMatcher:
             for frame in selected.values()
             if frame.archive_state == "ARCHIVE_DEGRADED_LIVE_ONLY"
         ]
+        synchronized_at_ms = max(
+            int(time.time() * 1000),
+            self._last_synchronized_at_ms + 1,
+        )
+        self._last_synchronized_at_ms = synchronized_at_ms
         frame_set = SynchronizedFrameSet(
             frame_set_id=frame_set_id,
             anchor_timestamp_ms=anchor_timestamp_ms,
@@ -154,6 +173,9 @@ class SyncMatcher:
                 if degraded_frames
                 else None
             ),
+            sync_window_ms=self.window_ms,
+            synchronized_at_ms=synchronized_at_ms,
+            member_count=len(selected),
         )
         self._next_frame_set_id += 1
         self.matched_count += 1
@@ -373,7 +395,7 @@ class SyncMatcher:
 
 def _resolve_capture_identity(
     frames: dict[str, StoredSyncFrame],
-) -> tuple[str, str | None]:
+) -> tuple[str, str | None, tuple[tuple[str, str], ...] | None]:
     if not all(
         frame.identity_mode == IDENTITY_MODE_V2
         and frame.source_session_id
@@ -383,12 +405,21 @@ def _resolve_capture_identity(
         and frame.content_digest
         for frame in frames.values()
     ):
-        return IDENTITY_MODE_LEGACY, None
+        return IDENTITY_MODE_LEGACY, None, None
     return (
         IDENTITY_MODE_V2,
         build_capture_session_id(
             (frame.camera_stream_id, frame.source_session_id)
             for frame in frames.values()
+        ),
+        tuple(
+            sorted(
+                (
+                    frame.camera_stream_id,
+                    frame.capture_config_digest or "",
+                )
+                for frame in frames.values()
+            )
         ),
     )
 
@@ -398,11 +429,23 @@ def _build_manifest_payload(
     capture_session_id: str | None,
     frames: dict[str, StoredSyncFrame],
     identity_mode: str,
+    sync_window_ms: int,
+    synchronization_span_ms: int,
+    anchor_timestamp_ms: int,
 ) -> dict:
     return {
         "schema_version": 2,
         "identity_mode": identity_mode,
         "capture_session_id": capture_session_id,
+        "synchronization": {
+            "algorithm": "minimum-span-v1",
+            "window_ms": sync_window_ms,
+            "span_ms": synchronization_span_ms,
+            "anchor_timestamp_ms": anchor_timestamp_ms,
+            "freshness_origin_ms": min(
+                frame.timestamp_ms for frame in frames.values()
+            ),
+        },
         "members": [
             {
                 "device_id": frame.device_id,
@@ -414,6 +457,12 @@ def _build_manifest_payload(
                 "content_type": frame.content_type,
                 "image_size": frame.image_size,
                 "content_digest": frame.content_digest,
+                "capture_config_digest": frame.capture_config_digest,
+                "capture_metadata_json": (
+                    frame.capture_metadata_json
+                    if frame.capture_metadata_json is not None
+                    else "{}"
+                ),
             }
             for frame in sorted(
                 frames.values(),

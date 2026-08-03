@@ -71,6 +71,14 @@ class FrameSetManifest(Base):
         server_default="ARCHIVE_DURABLE",
     )
     archive_error = Column(String, nullable=True)
+    sync_window_ms = Column(BigInteger, nullable=False, default=0, server_default="0")
+    synchronized_at_ms = Column(
+        BigInteger,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    member_count = Column(Integer, nullable=False, default=0, server_default="0")
 
 
 class FrameSetMember(Base):
@@ -114,3 +122,18 @@ class ArchiveReconciliationIssue(Base):
     file_path = Column(String, nullable=True)
     detail = Column(Text, nullable=False)
     detected_at_ms = Column(BigInteger, nullable=False)
+
+
+class FrameSetDeliveryProjection(Base):
+    __tablename__ = "frame_set_delivery_projections"
+
+    frame_set_uid = Column(
+        String,
+        ForeignKey("frame_set_manifests.frame_set_uid"),
+        primary_key=True,
+    )
+    archive_state = Column(String, nullable=False)
+    live_state = Column(String, nullable=False)
+    legacy_relay_state = Column(String, nullable=False)
+    last_reason = Column(String, nullable=True)
+    updated_at_ms = Column(BigInteger, nullable=False)
