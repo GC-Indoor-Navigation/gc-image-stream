@@ -107,8 +107,8 @@ class AnchorReplayMatcher:
         self.window_ms = window_ms
         self.buffer_manager = SyncFrameBufferManager(buffer_size=buffer_size)
         self._next_frame_set_id = 1
-        self._emitted_keys: set[tuple[int, ...]] = set()
-        self._used_frame_ids: set[int] = set()
+        self._emitted_keys: set[tuple[str, ...]] = set()
+        self._used_frame_keys: set[str] = set()
         self.matched_count = 0
         self.missed_count = 0
         self.duplicate_count = 0
@@ -138,7 +138,7 @@ class AnchorReplayMatcher:
                 device_id,
                 stored.timestamp_ms,
                 self.window_ms,
-                exclude_frame_ids=self._used_frame_ids,
+                exclude_frame_keys=self._used_frame_keys,
             )
             if nearest is None:
                 missing_cameras.append(device_id)
@@ -148,7 +148,7 @@ class AnchorReplayMatcher:
             self._record_miss(stored.timestamp_ms, missing_cameras)
             return None
 
-        key = tuple(sorted(frame.frame_id for frame in selected.values()))
+        key = tuple(sorted(frame.buffer_key for frame in selected.values()))
         if key in self._emitted_keys:
             self.duplicate_count += 1
             self.last_anchor_timestamp_ms = stored.timestamp_ms
@@ -168,7 +168,7 @@ class AnchorReplayMatcher:
         )
         self._next_frame_set_id += 1
         self._emitted_keys.add(key)
-        self._used_frame_ids.update(key)
+        self._used_frame_keys.update(key)
         self.matched_count += 1
         self.last_frame_set_id = frame_set.frame_set_id
         self.last_anchor_timestamp_ms = stored.timestamp_ms

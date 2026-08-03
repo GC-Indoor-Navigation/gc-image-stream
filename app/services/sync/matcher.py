@@ -1,4 +1,5 @@
 from collections import deque
+from dataclasses import replace
 from heapq import heappop, heappush
 from uuid import uuid4
 
@@ -29,8 +30,8 @@ class SyncMatcher:
         self._next_frame_set_id = 1
         self._capture_session_id: str | None = None
         self._capture_run_id = str(uuid4())
-        self._emitted_keys: set[tuple[int, ...]] = set()
-        self._used_frame_ids: set[int] = set()
+        self._emitted_keys: set[tuple[str, ...]] = set()
+        self._used_frame_keys: set[str] = set()
         self._recent_frame_sets: deque[SynchronizedFrameSet] = deque(
             maxlen=recent_limit
         )
@@ -48,6 +49,9 @@ class SyncMatcher:
         self.last_reason: str | None = None
         self.last_identity_mode: str | None = None
         self.legacy_identity_count = 0
+        self.last_archive_state: str | None = None
+        self.last_archive_error: str | None = None
+        self.archive_degraded_count = 0
 
     def try_match(self, trigger_frame: StoredSyncFrame) -> SynchronizedFrameSet | None:
         if not self.expected_cameras:
@@ -82,7 +86,7 @@ class SyncMatcher:
             self._drop_stale_frames()
             return None
 
-        key = tuple(sorted(frame.frame_id for frame in selected.values()))
+        key = tuple(sorted(frame.buffer_key for frame in selected.values()))
         if key in self._emitted_keys:
             self.duplicate_count += 1
             self.last_anchor_timestamp_ms = trigger_frame.timestamp_ms
@@ -91,7 +95,7 @@ class SyncMatcher:
             self._drop_stale_frames()
             return None
         self._emitted_keys.add(key)
-        self._used_frame_ids.update(key)
+        self._used_frame_keys.update(key)
 
         identity_mode, capture_session_id = _resolve_capture_identity(selected)
         if (
@@ -112,6 +116,11 @@ class SyncMatcher:
             identity_mode=identity_mode,
         )
         manifest_digest = build_manifest_digest(manifest_payload)
+        degraded_frames = [
+            frame
+            for frame in selected.values()
+            if frame.archive_state == "ARCHIVE_DEGRADED_LIVE_ONLY"
+        ]
         frame_set = SynchronizedFrameSet(
             frame_set_id=frame_set_id,
             anchor_timestamp_ms=anchor_timestamp_ms,
@@ -128,6 +137,23 @@ class SyncMatcher:
             manifest_digest=manifest_digest,
             manifest_json=canonical_json(manifest_payload),
             identity_mode=identity_mode,
+            archive_state=(
+                "ARCHIVE_DEGRADED_LIVE_ONLY"
+                if degraded_frames
+                else "ARCHIVE_PENDING"
+            ),
+            archive_error=(
+                "; ".join(
+                    sorted(
+                        {
+                            frame.archive_error or "member archive unavailable"
+                            for frame in degraded_frames
+                        }
+                    )
+                )
+                if degraded_frames
+                else None
+            ),
         )
         self._next_frame_set_id += 1
         self.matched_count += 1
@@ -140,6 +166,10 @@ class SyncMatcher:
         self.last_identity_mode = identity_mode
         if identity_mode == IDENTITY_MODE_LEGACY:
             self.legacy_identity_count += 1
+        self.last_archive_state = frame_set.archive_state
+        self.last_archive_error = frame_set.archive_error
+        if frame_set.archive_state == "ARCHIVE_DEGRADED_LIVE_ONLY":
+            self.archive_degraded_count += 1
         self._recent_frame_sets.append(frame_set)
         self._drop_stale_frames()
         return frame_set
@@ -162,10 +192,87 @@ class SyncMatcher:
             "capture_run_id": self._capture_run_id,
             "last_identity_mode": self.last_identity_mode,
             "legacy_identity_count": self.legacy_identity_count,
+            "last_archive_state": self.last_archive_state,
+            "last_archive_error": self.last_archive_error,
+            "archive_degraded_count": self.archive_degraded_count,
         }
 
     def recent_frame_sets(self) -> list[SynchronizedFrameSet]:
         return list(self._recent_frame_sets)
+
+    def finalize_archive_state(
+        self,
+        frame_set: SynchronizedFrameSet,
+        *,
+        state: str,
+        error: str | None,
+    ) -> SynchronizedFrameSet:
+        updated = replace(frame_set, archive_state=state, archive_error=error)
+        if (
+            frame_set.archive_state != "ARCHIVE_DEGRADED_LIVE_ONLY"
+            and state == "ARCHIVE_DEGRADED_LIVE_ONLY"
+        ):
+            self.archive_degraded_count += 1
+        self.last_archive_state = state
+        self.last_archive_error = error
+        self._replace_recent_frame_set(updated)
+        return updated
+
+    def replace_frame_member(
+        self,
+        frame_set: SynchronizedFrameSet,
+        frame: StoredSyncFrame,
+    ) -> SynchronizedFrameSet:
+        frames = dict(frame_set.frames)
+        for device_id, member in frames.items():
+            if member.buffer_key == frame.buffer_key:
+                frames[device_id] = frame
+                break
+        degraded = [
+            member
+            for member in frames.values()
+            if member.archive_state == "ARCHIVE_DEGRADED_LIVE_ONLY"
+        ]
+        updated = replace(
+            frame_set,
+            frames=frames,
+            archive_state=(
+                "ARCHIVE_DEGRADED_LIVE_ONLY" if degraded else "ARCHIVE_PENDING"
+            ),
+            archive_error=(
+                "; ".join(
+                    sorted(
+                        {
+                            member.archive_error or "member archive unavailable"
+                            for member in degraded
+                        }
+                    )
+                )
+                if degraded
+                else None
+            ),
+        )
+        if (
+            frame_set.archive_state != "ARCHIVE_DEGRADED_LIVE_ONLY"
+            and updated.archive_state == "ARCHIVE_DEGRADED_LIVE_ONLY"
+        ):
+            self.archive_degraded_count += 1
+        self.last_archive_state = updated.archive_state
+        self.last_archive_error = updated.archive_error
+        self._replace_recent_frame_set(updated)
+        return updated
+
+    def _replace_recent_frame_set(self, updated: SynchronizedFrameSet) -> None:
+        self._recent_frame_sets = deque(
+            [
+                updated
+                if item.capture_run_id == updated.capture_run_id
+                and item.frame_set_id == updated.frame_set_id
+                else item
+                for item in self._recent_frame_sets
+            ],
+            maxlen=self.recent_limit,
+        )
 
     def _record_miss(
         self,
@@ -186,7 +293,7 @@ class SyncMatcher:
         for device_id in self.expected_cameras:
             frames = self.buffer_manager.available_frames(
                 device_id,
-                exclude_frame_ids=self._used_frame_ids,
+                exclude_frame_keys=self._used_frame_keys,
             )
             if not frames:
                 missing_cameras.append(device_id)
@@ -195,7 +302,7 @@ class SyncMatcher:
         if missing_cameras:
             return None, None, missing_cameras
 
-        heap: list[tuple[int, int, str, int, StoredSyncFrame]] = []
+        heap: list[tuple[int, str, str, int, StoredSyncFrame]] = []
         current_frames: dict[str, StoredSyncFrame] = {}
         current_max_timestamp_ms: int | None = None
         for device_id, frames in candidate_lists.items():
@@ -206,7 +313,10 @@ class SyncMatcher:
                 if current_max_timestamp_ms is None
                 else max(current_max_timestamp_ms, frame.timestamp_ms)
             )
-            heappush(heap, (frame.timestamp_ms, frame.frame_id, device_id, 0, frame))
+            heappush(
+                heap,
+                (frame.timestamp_ms, frame.buffer_key, device_id, 0, frame),
+            )
 
         best_frames: dict[str, StoredSyncFrame] | None = None
         best_span_ms: int | None = None
@@ -233,7 +343,7 @@ class SyncMatcher:
                 heap,
                 (
                     next_frame.timestamp_ms,
-                    next_frame.frame_id,
+                    next_frame.buffer_key,
                     device_id,
                     next_index,
                     next_frame,
@@ -256,7 +366,7 @@ class SyncMatcher:
         dropped_count = self.buffer_manager.drop_frames_older_than(
             self.expected_cameras,
             drop_before_timestamp_ms,
-            counted_exclude_frame_ids=self._used_frame_ids,
+            counted_exclude_frame_keys=self._used_frame_keys,
         )
         self.dropped_stale_count += dropped_count
 

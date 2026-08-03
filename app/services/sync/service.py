@@ -1,4 +1,4 @@
-from app.services.sync.frame_buffer import SyncFrameBufferManager
+from app.services.sync.frame_buffer import SyncFrameBufferManager, build_buffer_key
 from app.services.sync.matcher import SyncMatcher
 from app.services.sync.models import SyncInputFrame, SynchronizedFrameSet
 
@@ -65,6 +65,9 @@ class StreamSyncService:
                 "capture_run_id": None,
                 "last_identity_mode": None,
                 "legacy_identity_count": 0,
+                "last_archive_state": None,
+                "last_archive_error": None,
+                "archive_degraded_count": 0,
             }
         )
         sync_progress = build_sync_progress(
@@ -85,6 +88,42 @@ class StreamSyncService:
         if self.matcher is None:
             return []
         return self.matcher.recent_frame_sets()
+
+    def finalize_archive_state(
+        self,
+        frame_set: SynchronizedFrameSet,
+        *,
+        state: str,
+        error: str | None,
+    ) -> SynchronizedFrameSet:
+        if self.matcher is None:
+            return frame_set
+        return self.matcher.finalize_archive_state(
+            frame_set,
+            state=state,
+            error=error,
+        )
+
+    def finalize_frame_archive(
+        self,
+        frame: SyncInputFrame,
+        frame_set: SynchronizedFrameSet | None,
+        *,
+        frame_id: int | None,
+        file_path: str | None,
+        archive_state: str,
+        archive_error: str | None,
+    ) -> SynchronizedFrameSet | None:
+        stored = self.buffer_manager.finalize_archive(
+            build_buffer_key(frame),
+            frame_id=frame_id,
+            file_path=file_path,
+            archive_state=archive_state,
+            archive_error=archive_error,
+        )
+        if frame_set is None or stored is None or self.matcher is None:
+            return frame_set
+        return self.matcher.replace_frame_member(frame_set, stored)
 
     def clear(self):
         self.configure(

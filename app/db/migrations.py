@@ -4,13 +4,15 @@ from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 
-FRAME_IDENTITY_COLUMNS = {
+FRAME_V2_COLUMNS = {
     "source_session_id",
     "camera_stream_id",
     "frame_sequence",
     "source_frame_uid",
     "content_digest",
     "identity_mode",
+    "archive_state",
+    "archive_error",
 }
 
 
@@ -19,13 +21,18 @@ def migrate_frame_identity_schema(engine: Engine) -> bool:
     if "frames" not in inspector.get_table_names():
         return False
 
-    columns = {column["name"] for column in inspector.get_columns("frames")}
+    column_metadata = {
+        column["name"]: column for column in inspector.get_columns("frames")
+    }
+    columns = set(column_metadata)
     unique_names = {
         constraint.get("name")
         for constraint in inspector.get_unique_constraints("frames")
     }
-    if FRAME_IDENTITY_COLUMNS.issubset(columns) and (
-        "uq_frame_device_timestamp" not in unique_names
+    if (
+        FRAME_V2_COLUMNS.issubset(columns)
+        and "uq_frame_device_timestamp" not in unique_names
+        and column_metadata["file_path"].get("nullable", False)
     ):
         return False
     if engine.dialect.name != "sqlite":
@@ -40,13 +47,15 @@ def migrate_frame_identity_schema(engine: Engine) -> bool:
                 id INTEGER NOT NULL PRIMARY KEY,
                 device_id VARCHAR NOT NULL,
                 timestamp BIGINT NOT NULL,
-                file_path VARCHAR NOT NULL,
+                file_path VARCHAR,
                 source_session_id VARCHAR,
                 camera_stream_id VARCHAR,
                 frame_sequence BIGINT,
                 source_frame_uid VARCHAR,
                 content_digest VARCHAR,
                 identity_mode VARCHAR NOT NULL DEFAULT 'LEGACY',
+                archive_state VARCHAR NOT NULL DEFAULT 'ARCHIVE_DURABLE',
+                archive_error VARCHAR,
                 CONSTRAINT uq_frame_source_uid UNIQUE (source_frame_uid),
                 CONSTRAINT uq_frame_source_identity UNIQUE (
                     source_session_id,
@@ -56,7 +65,7 @@ def migrate_frame_identity_schema(engine: Engine) -> bool:
             )
             """
         )
-        available = FRAME_IDENTITY_COLUMNS.intersection(columns)
+        available = FRAME_V2_COLUMNS.intersection(columns)
         select_values = {
             "source_session_id": (
                 "source_session_id" if "source_session_id" in available else "NULL"
@@ -78,6 +87,14 @@ def migrate_frame_identity_schema(engine: Engine) -> bool:
                 if "identity_mode" in available
                 else "'LEGACY'"
             ),
+            "archive_state": (
+                "COALESCE(archive_state, 'ARCHIVE_DURABLE')"
+                if "archive_state" in available
+                else "'ARCHIVE_DURABLE'"
+            ),
+            "archive_error": (
+                "archive_error" if "archive_error" in available else "NULL"
+            ),
         }
         connection.exec_driver_sql(
             f"""
@@ -91,7 +108,9 @@ def migrate_frame_identity_schema(engine: Engine) -> bool:
                 frame_sequence,
                 source_frame_uid,
                 content_digest,
-                identity_mode
+                identity_mode,
+                archive_state,
+                archive_error
             )
             SELECT
                 id,
@@ -103,7 +122,9 @@ def migrate_frame_identity_schema(engine: Engine) -> bool:
                 {select_values['frame_sequence']},
                 {select_values['source_frame_uid']},
                 {select_values['content_digest']},
-                {select_values['identity_mode']}
+                {select_values['identity_mode']},
+                {select_values['archive_state']},
+                {select_values['archive_error']}
             FROM frames
             """
         )

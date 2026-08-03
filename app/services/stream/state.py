@@ -6,14 +6,16 @@ from threading import Lock
 
 @dataclass
 class StreamFrameState:
-    frame_id: int
+    frame_id: int | None
     device_id: str
     timestamp: int
     sequence: int | None
-    file_path: str
+    file_path: str | None
     content_type: str
     image_bytes_size: int
     received_at_ms: int
+    archive_state: str = "ARCHIVE_PENDING"
+    archive_error: str | None = None
 
 
 @dataclass
@@ -34,14 +36,16 @@ class StreamState:
 
     def update_frame(
         self,
-        frame_id: int,
+        frame_id: int | None,
         device_id: str,
         timestamp: int,
         sequence: int | None,
-        file_path: str,
+        file_path: str | None,
         content_type: str,
         image_bytes_size: int,
         received_at_ms: int | None = None,
+        archive_state: str = "ARCHIVE_PENDING",
+        archive_error: str | None = None,
     ) -> CameraStreamState:
         now_ms = received_at_ms if received_at_ms is not None else current_time_ms()
 
@@ -73,6 +77,8 @@ class StreamState:
                 content_type=content_type,
                 image_bytes_size=image_bytes_size,
                 received_at_ms=now_ms,
+                archive_state=archive_state,
+                archive_error=archive_error,
             )
             return copy_camera_state(camera)
 

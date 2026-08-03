@@ -412,26 +412,28 @@ class GrpcIngestService:
                             captured_at=received_at,
                             image_bytes_size=len(request.jpeg),
                         )
-                    write_ingest_metadata_sidecar(
-                        result["frame"].file_path,
-                        {
-                            "service": "gc.collector.v1.FrameIngestService",
-                            "metadata": MessageToDict(
-                                metadata,
-                                preserving_proto_field_name=True,
-                                always_print_fields_with_no_presence=True,
-                            ),
-                            "server": {
-                                "received_at_ms": received_at_ms,
-                                "received_monotonic_ns": received_monotonic_ns,
-                                "ingested_at_ms": ingested_at_ms,
-                                "ingested_monotonic_ns": ingested_monotonic_ns,
-                                "ingest_elapsed_ms": ingested_at_ms - received_at_ms,
-                                "server_receive_sequence": server_receive_sequence,
-                                "gate_start_timestamp_ms": self.gate_start_timestamp_ms,
+                    archived_frame = result["frame"]
+                    if archived_frame is not None and archived_frame.file_path:
+                        write_ingest_metadata_sidecar(
+                            archived_frame.file_path,
+                            {
+                                "service": "gc.collector.v1.FrameIngestService",
+                                "metadata": MessageToDict(
+                                    metadata,
+                                    preserving_proto_field_name=True,
+                                    always_print_fields_with_no_presence=True,
+                                ),
+                                "server": {
+                                    "received_at_ms": received_at_ms,
+                                    "received_monotonic_ns": received_monotonic_ns,
+                                    "ingested_at_ms": ingested_at_ms,
+                                    "ingested_monotonic_ns": ingested_monotonic_ns,
+                                    "ingest_elapsed_ms": ingested_at_ms - received_at_ms,
+                                    "server_receive_sequence": server_receive_sequence,
+                                    "gate_start_timestamp_ms": self.gate_start_timestamp_ms,
+                                },
                             },
-                        },
-                    )
+                        )
                 finally:
                     db.close()
 

@@ -151,8 +151,12 @@ def _validate_v2_frame_set(frame_set: SynchronizedFrameSet) -> None:
             and frame.camera_stream_id
             and frame.sequence is not None
             and frame.content_digest
+            and frame.archive_state == "ARCHIVE_DURABLE"
+            and frame.file_path
         ):
-            raise ManifestIntegrityError("v2 manifest member has incomplete identity")
+            raise ManifestIntegrityError(
+                "v2 manifest member is not identity-complete and archive-durable"
+            )
 
 
 def _verify_existing_manifest(

@@ -57,6 +57,7 @@ def make_v2_frame(
         ),
         content_digest=sha256_bytes(payload),
         identity_mode=IDENTITY_MODE_V2,
+        archive_state="ARCHIVE_DURABLE",
     )
 
 
@@ -333,7 +334,10 @@ def test_legacy_frame_schema_is_backfilled_without_timestamp_uniqueness(tmp_path
 
     ensure_database_schema(engine)
 
-    columns = {column["name"] for column in inspect(engine).get_columns("frames")}
+    column_metadata = {
+        column["name"]: column for column in inspect(engine).get_columns("frames")
+    }
+    columns = set(column_metadata)
     factory = sessionmaker(bind=engine)
     db = factory()
     try:
@@ -353,6 +357,8 @@ def test_legacy_frame_schema_is_backfilled_without_timestamp_uniqueness(tmp_path
         assert legacy.source_frame_uid is None
         assert v2.id != legacy.id
         assert "source_frame_uid" in columns
+        assert "archive_state" in columns
+        assert column_metadata["file_path"]["nullable"] is True
     finally:
         db.close()
         engine.dispose()

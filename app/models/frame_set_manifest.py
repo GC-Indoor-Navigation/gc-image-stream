@@ -84,7 +84,7 @@ class FrameSetMember(Base):
         nullable=False,
         index=True,
     )
-    frame_id = Column(Integer, nullable=False)
+    frame_id = Column(Integer, nullable=True)
     source_frame_uid = Column(String, nullable=False)
     source_session_id = Column(String, nullable=False)
     camera_stream_id = Column(String, nullable=False)

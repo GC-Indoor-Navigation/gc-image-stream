@@ -217,18 +217,25 @@ def build_relay_frame_set(frame_set: SynchronizedFrameSet) -> RelayFrameSet:
         anchor_timestamp_ms=frame_set.anchor_timestamp_ms,
         max_delta_ms=frame_set.max_delta_ms,
         frames=[
-            RelayFrameSetFrame(
-                device_id=frame.device_id,
-                timestamp_ms=frame.timestamp_ms,
-                sequence=frame.sequence or 0,
-                content_type=frame.content_type,
-                image_bytes=frame.image_bytes,
-                file_path=frame.file_path,
-                frame_id=frame.frame_id,
-            )
+            _build_relay_frame_set_frame(frame)
             for device_id, frame in sorted(frame_set.frames.items())
         ],
     )
+
+
+def _build_relay_frame_set_frame(frame) -> RelayFrameSetFrame:
+    fields = {
+        "device_id": frame.device_id,
+        "timestamp_ms": frame.timestamp_ms,
+        "sequence": frame.sequence or 0,
+        "content_type": frame.content_type,
+        "image_bytes": frame.image_bytes,
+    }
+    if frame.file_path is not None:
+        fields["file_path"] = frame.file_path
+    if frame.frame_id is not None:
+        fields["frame_id"] = frame.frame_id
+    return RelayFrameSetFrame(**fields)
 
 
 class ProcessingFrameSetRelayService:

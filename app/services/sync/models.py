@@ -3,35 +3,40 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class SyncInputFrame:
-    frame_id: int
+    frame_id: int | None
     device_id: str
     timestamp_ms: int
     sequence: int | None
     content_type: str
     image_bytes: bytes
-    file_path: str
+    file_path: str | None
     source_session_id: str | None = None
     camera_stream_id: str | None = None
     source_frame_uid: str | None = None
     content_digest: str | None = None
     identity_mode: str = "LEGACY"
+    archive_state: str = "ARCHIVE_PENDING"
+    archive_error: str | None = None
 
 
 @dataclass(frozen=True)
 class StoredSyncFrame:
-    frame_id: int
+    frame_id: int | None
     device_id: str
     timestamp_ms: int
     sequence: int | None
     content_type: str
     image_bytes: bytes
     image_size: int
-    file_path: str
+    file_path: str | None
+    buffer_key: str = ""
     source_session_id: str | None = None
     camera_stream_id: str | None = None
     source_frame_uid: str | None = None
     content_digest: str | None = None
     identity_mode: str = "LEGACY"
+    archive_state: str = "ARCHIVE_PENDING"
+    archive_error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -47,3 +52,5 @@ class SynchronizedFrameSet:
     manifest_digest: str | None = None
     manifest_json: str | None = None
     identity_mode: str = "LEGACY"
+    archive_state: str = "ARCHIVE_PENDING"
+    archive_error: str | None = None

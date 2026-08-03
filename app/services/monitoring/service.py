@@ -72,6 +72,8 @@ def serialize_camera_state(
         "latest_file_path": latest.file_path if latest is not None else None,
         "latest_content_type": latest.content_type if latest is not None else None,
         "latest_image_bytes": latest.image_bytes_size if latest is not None else None,
+        "latest_archive_state": latest.archive_state if latest is not None else None,
+        "latest_archive_error": latest.archive_error if latest is not None else None,
         "last_received_at": latest.received_at_ms if latest is not None else None,
         "last_received_age_ms": last_received_age_ms,
         "sequence_gap_count": camera.sequence_gap_count,
@@ -219,6 +221,8 @@ def serialize_sync_frame_set(frame_set: SynchronizedFrameSet) -> dict:
         "capture_run_id": frame_set.capture_run_id,
         "identity_mode": frame_set.identity_mode,
         "manifest_digest": frame_set.manifest_digest,
+        "archive_state": frame_set.archive_state,
+        "archive_error": frame_set.archive_error,
         "anchor_timestamp_ms": frame_set.anchor_timestamp_ms,
         "max_delta_ms": frame_set.max_delta_ms,
         "span_ms": frame_set.span_ms
@@ -237,6 +241,8 @@ def serialize_sync_frame_set(frame_set: SynchronizedFrameSet) -> dict:
                 "camera_stream_id": frame.camera_stream_id,
                 "source_frame_uid": frame.source_frame_uid,
                 "content_digest": frame.content_digest,
+                "archive_state": frame.archive_state,
+                "archive_error": frame.archive_error,
             }
             for device_id, frame in frame_set.frames.items()
         },
