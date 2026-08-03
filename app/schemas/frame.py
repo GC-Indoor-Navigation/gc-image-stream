@@ -16,3 +16,4 @@ class FrameResponse(BaseModel):
     identity_mode: str = Field(description="V2 stable identity or LEGACY fallback")
     archive_state: str = Field(description="Durable or explicit live-only archive state")
     archive_error: str | None = Field(default=None)
+    file_size: int | None = Field(default=None)

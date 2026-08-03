@@ -64,6 +64,13 @@ class FrameSetManifest(Base):
     manifest_digest = Column(String, nullable=False, unique=True)
     manifest_json = Column(Text, nullable=False)
     created_at_ms = Column(BigInteger, nullable=False)
+    archive_state = Column(
+        String,
+        nullable=False,
+        default="ARCHIVE_DURABLE",
+        server_default="ARCHIVE_DURABLE",
+    )
+    archive_error = Column(String, nullable=True)
 
 
 class FrameSetMember(Base):
@@ -94,3 +101,16 @@ class FrameSetMember(Base):
     image_size = Column(BigInteger, nullable=False)
     content_digest = Column(String, nullable=False)
     file_path = Column(String, nullable=False)
+
+
+class ArchiveReconciliationIssue(Base):
+    __tablename__ = "archive_reconciliation_issues"
+
+    id = Column(Integer, primary_key=True)
+    reconciliation_run_id = Column(String, nullable=False, index=True)
+    issue_type = Column(String, nullable=False, index=True)
+    frame_id = Column(Integer, nullable=True, index=True)
+    frame_set_uid = Column(String, nullable=True, index=True)
+    file_path = Column(String, nullable=True)
+    detail = Column(Text, nullable=False)
+    detected_at_ms = Column(BigInteger, nullable=False)

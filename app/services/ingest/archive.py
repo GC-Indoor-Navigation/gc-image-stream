@@ -1,6 +1,8 @@
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
@@ -38,7 +40,7 @@ def persist_frame_archive(
     writer: ArchiveWriter | None = None,
 ) -> FrameArchiveOutcome:
     errors = [initial_error] if initial_error else []
-    resolved_writer = writer or _write_bytes
+    resolved_writer = writer or durable_write_bytes
     file_durable = False
 
     if save_path is not None and not errors:
@@ -62,6 +64,7 @@ def persist_frame_archive(
             content_digest=content_digest,
             archive_state=state,
             archive_error=error,
+            file_size=len(image_bytes) if file_durable else None,
         )
     except Exception as exc:
         db.rollback()
@@ -83,5 +86,33 @@ def persist_frame_archive(
     )
 
 
-def _write_bytes(path: Path, payload: bytes) -> None:
-    path.write_bytes(payload)
+def durable_write_bytes(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.parent / f".{path.name}.{uuid4().hex}.tmp"
+    try:
+        with temporary.open("xb") as file:
+            file.write(payload)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary, path)
+        _fsync_directory(path.parent)
+    except Exception:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = None
+    try:
+        descriptor = os.open(path, os.O_RDONLY)
+        os.fsync(descriptor)
+    except OSError:
+        # Windows does not expose portable directory fsync. File fsync and
+        # same-directory atomic replace remain mandatory on every platform.
+        return
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)

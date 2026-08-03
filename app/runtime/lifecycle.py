@@ -29,6 +29,8 @@ from app.infrastructure.grpc.processing_relay_client import (
     processing_relay_service,
 )
 from app.services.ingest.camera_session_manager import camera_session_manager
+from app.services.ingest.reconciliation import reconcile_archive
+from app.db import SessionLocal
 from app.services.stream.stream_experiment import (
     clear_stream_experiment_recorder,
     configure_stream_experiment_recorder,
@@ -55,6 +57,24 @@ def resolve_selected_relay_target() -> str:
 
 
 async def startup_application():
+    reconciliation_db = SessionLocal()
+    try:
+        reconciliation = reconcile_archive(reconciliation_db, STORAGE_DIR)
+    finally:
+        reconciliation_db.close()
+    reconciliation_fields = {
+        "run_id": reconciliation.run_id,
+        "checked_frames": reconciliation.checked_frames,
+        "healthy_frames": reconciliation.healthy_frames,
+        "degraded_frames": reconciliation.degraded_frames,
+        "orphan_files": reconciliation.orphan_files,
+        "partial_files": reconciliation.partial_files,
+    }
+    if reconciliation.degraded_frames or reconciliation.orphan_files or reconciliation.partial_files:
+        logger.warning(format_log_event("archive_reconciliation_degraded", **reconciliation_fields))
+    else:
+        logger.info(format_log_event("archive_reconciliation_healthy", **reconciliation_fields))
+
     camera_configs = []
     if CAMERA_SESSIONS_ENABLED:
         camera_configs = build_camera_session_configs_from_env()

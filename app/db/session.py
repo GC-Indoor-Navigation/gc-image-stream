@@ -5,6 +5,7 @@ from app.core.server import DATABASE_URL
 from app.db.migrations import (
     close_open_capture_runs_after_restart,
     migrate_frame_identity_schema,
+    migrate_manifest_archive_schema,
 )
 
 
@@ -24,6 +25,7 @@ SessionLocal = sessionmaker(
 def ensure_database_schema(bind=engine):
     inspect(bind)
     migrate_frame_identity_schema(bind)
+    migrate_manifest_archive_schema(bind)
     close_open_capture_runs_after_restart(bind)
 
 

@@ -39,3 +39,4 @@ class Frame(Base):
         server_default="ARCHIVE_DURABLE",
     )
     archive_error = Column(String, nullable=True)
+    file_size = Column(BigInteger, nullable=True)

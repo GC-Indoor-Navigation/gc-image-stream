@@ -13,6 +13,7 @@ FRAME_V2_COLUMNS = {
     "identity_mode",
     "archive_state",
     "archive_error",
+    "file_size",
 }
 
 
@@ -56,6 +57,7 @@ def migrate_frame_identity_schema(engine: Engine) -> bool:
                 identity_mode VARCHAR NOT NULL DEFAULT 'LEGACY',
                 archive_state VARCHAR NOT NULL DEFAULT 'ARCHIVE_DURABLE',
                 archive_error VARCHAR,
+                file_size BIGINT,
                 CONSTRAINT uq_frame_source_uid UNIQUE (source_frame_uid),
                 CONSTRAINT uq_frame_source_identity UNIQUE (
                     source_session_id,
@@ -95,6 +97,7 @@ def migrate_frame_identity_schema(engine: Engine) -> bool:
             "archive_error": (
                 "archive_error" if "archive_error" in available else "NULL"
             ),
+            "file_size": "file_size" if "file_size" in available else "NULL",
         }
         connection.exec_driver_sql(
             f"""
@@ -110,7 +113,8 @@ def migrate_frame_identity_schema(engine: Engine) -> bool:
                 content_digest,
                 identity_mode,
                 archive_state,
-                archive_error
+                archive_error,
+                file_size
             )
             SELECT
                 id,
@@ -124,7 +128,8 @@ def migrate_frame_identity_schema(engine: Engine) -> bool:
                 {select_values['content_digest']},
                 {select_values['identity_mode']},
                 {select_values['archive_state']},
-                {select_values['archive_error']}
+                {select_values['archive_error']},
+                {select_values['file_size']}
             FROM frames
             """
         )
@@ -145,6 +150,32 @@ def migrate_frame_identity_schema(engine: Engine) -> bool:
             WHERE identity_mode = 'LEGACY'
             """
         )
+    return True
+
+
+def migrate_manifest_archive_schema(engine: Engine) -> bool:
+    inspector = inspect(engine)
+    if "frame_set_manifests" not in inspector.get_table_names():
+        return False
+    columns = {
+        column["name"]
+        for column in inspector.get_columns("frame_set_manifests")
+    }
+    missing = {"archive_state", "archive_error"} - columns
+    if not missing:
+        return False
+    with engine.begin() as connection:
+        if "archive_state" in missing:
+            connection.exec_driver_sql(
+                """
+                ALTER TABLE frame_set_manifests
+                ADD COLUMN archive_state VARCHAR NOT NULL DEFAULT 'ARCHIVE_DURABLE'
+                """
+            )
+        if "archive_error" in missing:
+            connection.exec_driver_sql(
+                "ALTER TABLE frame_set_manifests ADD COLUMN archive_error VARCHAR"
+            )
     return True
 
 

@@ -26,6 +26,7 @@ def create_frame(
     content_digest: str | None = None,
     archive_state: str = "ARCHIVE_DURABLE",
     archive_error: str | None = None,
+    file_size: int | None = None,
 ) -> Frame:
     source_frame_uid, identity_mode = resolve_frame_identity(
         source_session_id=source_session_id,
@@ -49,6 +50,7 @@ def create_frame(
             file_path=file_path,
             archive_state=archive_state,
             archive_error=archive_error,
+            file_size=file_size,
         )
         return existing
 
@@ -64,6 +66,7 @@ def create_frame(
         identity_mode=identity_mode,
         archive_state=archive_state,
         archive_error=archive_error,
+        file_size=file_size,
     )
     db.add(frame)
     try:
@@ -87,6 +90,7 @@ def create_frame(
                 file_path=file_path,
                 archive_state=archive_state,
                 archive_error=archive_error,
+                file_size=file_size,
             )
             return existing
         raise
@@ -161,6 +165,7 @@ def _apply_archive_recovery(
     file_path: str | None,
     archive_state: str,
     archive_error: str | None,
+    file_size: int | None,
 ) -> None:
     if (
         archive_state == "ARCHIVE_DURABLE"
@@ -169,6 +174,7 @@ def _apply_archive_recovery(
         frame.file_path = file_path
         frame.archive_state = archive_state
         frame.archive_error = archive_error
+        frame.file_size = file_size
         db.commit()
         db.refresh(frame)
 
