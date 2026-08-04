@@ -103,6 +103,7 @@ class LatestLiveStore:
                     watermark_capture_run_id=candidate.capture_run_id,
                     watermark_frame_set_id=candidate.frame_set_id,
                     watermark_frame_set_uid=candidate.frame_set_uid,
+                    reoffer_frame_set_uid=None,
                     updated_at_ms=timestamp_ms,
                 )
             )
@@ -132,6 +133,105 @@ class LatestLiveStore:
             db.commit()
             return snapshot
 
+    def unresolved_keys(self) -> tuple[FrameSetKey, ...]:
+        current = self.current_in_flight()
+        return (current,) if current is not None else ()
+
+    def mark_unresolved(
+        self,
+        key: FrameSetKey,
+        *,
+        reason: str = "TRANSPORT_DISCONNECTED",
+        updated_at_ms: int | None = None,
+    ) -> bool:
+        return self._transition_current(
+            key,
+            live_state="UNRESOLVED",
+            reason=reason,
+            release=False,
+            updated_at_ms=updated_at_ms,
+        )
+
+    def apply_remote_status(
+        self,
+        key: FrameSetKey,
+        *,
+        state: str,
+        reason: str | None = None,
+        updated_at_ms: int | None = None,
+    ) -> bool:
+        normalized = state.strip().upper()
+        if normalized not in {
+            "ACCEPTED",
+            "STARTED",
+            "REJECTED",
+            "COMPLETED",
+            "FAILED",
+            "RECOVERY_REQUIRED",
+        }:
+            raise ValueError(f"unsupported relay v2 status: {state}")
+        return self._transition_current(
+            key,
+            live_state=normalized,
+            reason=reason,
+            release=normalized
+            in {"REJECTED", "COMPLETED", "FAILED", "RECOVERY_REQUIRED"},
+            updated_at_ms=updated_at_ms,
+        )
+
+    def release_before_send(
+        self,
+        key: FrameSetKey,
+        *,
+        state: str,
+        reason: str,
+        updated_at_ms: int | None = None,
+    ) -> bool:
+        normalized = state.strip().upper()
+        if normalized not in {"EXPIRED_BEFORE_OFFER", "REJECTED"}:
+            raise ValueError(f"unsupported pre-send state: {state}")
+        return self._transition_current(
+            key,
+            live_state=normalized,
+            reason=reason,
+            release=True,
+            updated_at_ms=updated_at_ms,
+        )
+
+    def reconcile_not_found(
+        self,
+        key: FrameSetKey,
+        *,
+        retry_allowed: bool,
+        updated_at_ms: int | None = None,
+    ) -> bool:
+        timestamp_ms = updated_at_ms or int(time.time() * 1000)
+        with self._session_factory() as db:
+            state = db.get(RelayV2ClientState, self._SINGLETON_ID)
+            if not self._matches_current(db, state, key):
+                return False
+            projection = db.get(FrameSetDeliveryProjection, key.frame_set_uid)
+            projection.live_state = (
+                "ELIGIBLE" if retry_allowed else "SUPERSEDED_BEFORE_OFFER"
+            )
+            projection.last_reason = (
+                "RECONCILED_NOT_FOUND_RETRY"
+                if retry_allowed
+                else "RECONCILED_NOT_FOUND_NEWER_AVAILABLE"
+            )
+            projection.updated_at_ms = timestamp_ms
+            state.in_flight_frame_set_uid = None
+            state.in_flight_credit_id = None
+            state.in_flight_processor_instance_id = None
+            state.in_flight_stream_epoch = None
+            state.in_flight_offered_at_ms = None
+            state.reoffer_frame_set_uid = (
+                key.frame_set_uid if retry_allowed else None
+            )
+            state.updated_at_ms = timestamp_ms
+            db.commit()
+            return True
+
     def current_in_flight(self) -> FrameSetKey | None:
         with self._session_factory() as db:
             state = db.get(RelayV2ClientState, self._SINGLETON_ID)
@@ -152,6 +252,45 @@ class LatestLiveStore:
                 frame_set_id=state.watermark_frame_set_id,
                 frame_set_uid=state.watermark_frame_set_uid,
             )
+
+    def _transition_current(
+        self,
+        key: FrameSetKey,
+        *,
+        live_state: str,
+        reason: str | None,
+        release: bool,
+        updated_at_ms: int | None,
+    ) -> bool:
+        timestamp_ms = updated_at_ms or int(time.time() * 1000)
+        with self._session_factory() as db:
+            state = db.get(RelayV2ClientState, self._SINGLETON_ID)
+            if not self._matches_current(db, state, key):
+                return False
+            projection = db.get(FrameSetDeliveryProjection, key.frame_set_uid)
+            projection.live_state = live_state
+            projection.last_reason = reason
+            projection.updated_at_ms = timestamp_ms
+            if release:
+                state.in_flight_frame_set_uid = None
+                state.in_flight_credit_id = None
+                state.in_flight_processor_instance_id = None
+                state.in_flight_stream_epoch = None
+                state.in_flight_offered_at_ms = None
+            state.updated_at_ms = timestamp_ms
+            db.commit()
+            return True
+
+    @staticmethod
+    def _matches_current(
+        db: Session,
+        state: RelayV2ClientState | None,
+        key: FrameSetKey,
+    ) -> bool:
+        if state is None or state.in_flight_frame_set_uid != key.frame_set_uid:
+            return False
+        manifest = db.get(FrameSetManifest, key.frame_set_uid)
+        return manifest is not None and LatestLiveStore._key(manifest) == key
 
     @staticmethod
     def _ensure_state_row(db: Session, timestamp_ms: int) -> None:
@@ -192,6 +331,8 @@ class LatestLiveStore:
             .limit(1)
         ).scalar_one_or_none()
         if candidate is None or state.watermark_frame_set_uid is None:
+            return candidate
+        if candidate.frame_set_uid == state.reoffer_frame_set_uid:
             return candidate
 
         watermark = db.get(FrameSetManifest, state.watermark_frame_set_uid)

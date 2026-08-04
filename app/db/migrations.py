@@ -211,6 +211,24 @@ def migrate_manifest_archive_schema(engine: Engine) -> bool:
     return True
 
 
+def migrate_relay_v2_client_state_schema(engine: Engine) -> bool:
+    inspector = inspect(engine)
+    if "relay_v2_client_state" not in inspector.get_table_names():
+        return False
+    columns = {
+        column["name"]
+        for column in inspector.get_columns("relay_v2_client_state")
+    }
+    if "reoffer_frame_set_uid" in columns:
+        return False
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "ALTER TABLE relay_v2_client_state "
+            "ADD COLUMN reoffer_frame_set_uid VARCHAR"
+        )
+    return True
+
+
 def close_open_capture_runs_after_restart(engine: Engine) -> int:
     inspector = inspect(engine)
     if "capture_runs" not in inspector.get_table_names():
