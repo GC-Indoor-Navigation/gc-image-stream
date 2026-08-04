@@ -132,3 +132,27 @@ def test_v2_shadow_requires_target_and_profile(monkeypatch):
     monkeypatch.setenv("STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST", "profile")
     reloaded = reload(server)
     assert reloaded.STREAM_RELAY_V2_SHADOW_ENABLED is True
+
+
+def test_v2_alert_receiver_is_disabled_and_lazy_by_default(monkeypatch, tmp_path):
+    from importlib import reload
+
+    import app.core.server as server
+
+    storage = tmp_path / "storage"
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///./frames.db")
+    monkeypatch.setenv("STORAGE_DIR", str(storage))
+    monkeypatch.setenv("STREAM_RELAY_MODE", "off")
+    monkeypatch.delenv("STREAM_RELAY_V2_ALERT_RECEIVER_ENABLED", raising=False)
+    monkeypatch.delenv(
+        "STREAM_RELAY_V2_ALERT_RECEIVER_DATABASE_PATH",
+        raising=False,
+    )
+
+    reloaded = reload(server)
+
+    assert reloaded.STREAM_RELAY_V2_ALERT_RECEIVER_ENABLED is False
+    assert reloaded.STREAM_RELAY_V2_ALERT_RECEIVER_DATABASE_PATH == str(
+        storage / "relay-v2-alert-receiver.db"
+    )
+    assert not storage.exists()

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from app.core.env import (
     get_optional_bool_env,
     get_optional_csv_env,
@@ -78,6 +80,14 @@ STREAM_RELAY_V2_MAXIMUM_CLOCK_UNCERTAINTY_MS = get_optional_int_env(
     "STREAM_RELAY_V2_MAXIMUM_CLOCK_UNCERTAINTY_MS",
     0,
 )
+STREAM_RELAY_V2_ALERT_RECEIVER_ENABLED = get_optional_bool_env(
+    "STREAM_RELAY_V2_ALERT_RECEIVER_ENABLED",
+    False,
+)
+STREAM_RELAY_V2_ALERT_RECEIVER_DATABASE_PATH = get_optional_str_env(
+    "STREAM_RELAY_V2_ALERT_RECEIVER_DATABASE_PATH",
+    str(Path(STORAGE_DIR) / "relay-v2-alert-receiver.db"),
+)
 if STREAM_RELAY_V2_SHADOW_ENABLED:
     if not STREAM_RELAY_V2_TARGET:
         raise RuntimeError(
@@ -95,6 +105,14 @@ if STREAM_RELAY_V2_SHADOW_ENABLED:
         raise RuntimeError(
             "STREAM_RELAY_V2_MAXIMUM_CLOCK_UNCERTAINTY_MS must be nonnegative"
         )
+if (
+    STREAM_RELAY_V2_ALERT_RECEIVER_ENABLED
+    and not STREAM_RELAY_V2_ALERT_RECEIVER_DATABASE_PATH
+):
+    raise RuntimeError(
+        "STREAM_RELAY_V2_ALERT_RECEIVER_DATABASE_PATH is required when the v2 "
+        "alert receiver is enabled"
+    )
 STREAM_SYNC_ENABLED = get_optional_bool_env("STREAM_SYNC_ENABLED", False)
 STREAM_SYNC_WINDOW_MS = get_optional_int_env("STREAM_SYNC_WINDOW_MS", 50)
 STREAM_SYNC_EXPECTED_CAMERAS = get_optional_csv_env("STREAM_SYNC_EXPECTED_CAMERAS")

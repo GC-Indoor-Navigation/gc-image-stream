@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -37,3 +37,40 @@ class ProcessingAlertIngestResponse(BaseModel):
 class RecentProcessingAlertsResponse(BaseModel):
     items: list[dict]
     status: dict
+
+
+class RelayV2AlertReceiverRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    contract_version: int = Field(ge=1)
+    idempotency_key: str = Field(min_length=1)
+    payload_digest: str = Field(min_length=64, max_length=64)
+    processing_job_id: str = Field(min_length=1)
+    frame_set_uid: str = Field(min_length=1)
+    transition_event_id: str = Field(min_length=1)
+    hazard_key: str = Field(min_length=1)
+    from_state: str = Field(min_length=1)
+    to_state: str = Field(min_length=1)
+    from_version: int = Field(ge=0)
+    to_version: int = Field(ge=1)
+    severity: Literal["info", "warning", "danger"]
+    observation_event_utc_ms: int = Field(gt=0)
+    delivery_deadline_utc_ms: int = Field(gt=0)
+    alert_payload: dict[str, Any]
+
+
+class RelayV2AlertReceiverResponse(BaseModel):
+    contract_version: int
+    idempotency_key: str
+    payload_digest: str
+    status: Literal[
+        "APPLIED",
+        "DUPLICATE",
+        "RETRYABLE_FAILURE",
+        "VERSION_GAP",
+        "CONFLICT",
+        "REJECTED",
+    ]
+    receiver_hazard_version: int = Field(ge=0)
+    user_visible_effect_applied: bool
+    received_at_utc_ms: int = Field(gt=0)
