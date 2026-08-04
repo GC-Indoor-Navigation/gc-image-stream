@@ -137,6 +137,82 @@ class LatestLiveStore:
         current = self.current_in_flight()
         return (current,) if current is not None else ()
 
+    def snapshot_for_hello(self) -> ClaimedFrameSet | None:
+        with self._session_factory() as db:
+            state = db.get(RelayV2ClientState, self._SINGLETON_ID)
+            if state is None:
+                state = RelayV2ClientState(
+                    singleton_id=self._SINGLETON_ID,
+                    updated_at_ms=0,
+                )
+            if state.in_flight_frame_set_uid is not None:
+                manifest = db.get(
+                    FrameSetManifest,
+                    state.in_flight_frame_set_uid,
+                )
+                if manifest is None:
+                    raise RuntimeError("relay v2 in-flight manifest is missing")
+                credit = CreditIdentity(
+                    processor_instance_id=(
+                        state.in_flight_processor_instance_id or ""
+                    ),
+                    stream_epoch=state.in_flight_stream_epoch or "",
+                    credit_id=state.in_flight_credit_id or "",
+                )
+                return self._snapshot(
+                    db,
+                    manifest,
+                    credit,
+                    state.in_flight_offered_at_ms or 0,
+                )
+            manifest = self._newest_eligible(db, state)
+            if manifest is None:
+                return None
+            return self._snapshot(
+                db,
+                manifest,
+                CreditIdentity("", "", ""),
+                0,
+            )
+
+    def has_newer_eligible(self, key: FrameSetKey) -> bool:
+        with self._session_factory() as db:
+            current = db.get(FrameSetManifest, key.frame_set_uid)
+            if current is None or self._key(current) != key:
+                return False
+            candidate = db.execute(
+                select(FrameSetManifest)
+                .join(
+                    FrameSetDeliveryProjection,
+                    FrameSetDeliveryProjection.frame_set_uid
+                    == FrameSetManifest.frame_set_uid,
+                )
+                .where(
+                    FrameSetDeliveryProjection.archive_state
+                    == "ARCHIVE_DURABLE",
+                    FrameSetDeliveryProjection.live_state == "ELIGIBLE",
+                )
+                .order_by(
+                    FrameSetManifest.synchronized_at_ms.desc(),
+                    FrameSetManifest.created_at_ms.desc(),
+                    FrameSetManifest.frame_set_uid.desc(),
+                )
+                .limit(1)
+            ).scalar_one_or_none()
+            if candidate is None:
+                return False
+            if candidate.capture_run_id == key.capture_run_id:
+                return candidate.frame_set_id > key.frame_set_id
+            return (
+                candidate.synchronized_at_ms,
+                candidate.created_at_ms,
+                candidate.frame_set_uid,
+            ) > (
+                current.synchronized_at_ms,
+                current.created_at_ms,
+                current.frame_set_uid,
+            )
+
     def mark_unresolved(
         self,
         key: FrameSetKey,

@@ -15,6 +15,7 @@ from app.services.relay_v2.protocol import (
     build_credited_frame_set,
     build_no_data,
     build_producer_hello,
+    build_reconciliation_request,
     credit_identity,
 )
 
@@ -33,5 +34,6 @@ __all__ = [
     "build_credited_frame_set",
     "build_no_data",
     "build_producer_hello",
+    "build_reconciliation_request",
     "credit_identity",
 ]

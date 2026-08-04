@@ -280,6 +280,25 @@ def build_no_data(
     return relay_pb2.ProducerEnvelope(no_data=relay_pb2.NoData(**fields))
 
 
+def build_reconciliation_request(
+    *,
+    session: NegotiatedSession,
+    config: ProtocolConfig,
+    unresolved: tuple[FrameSetKey, ...],
+    resume_token: str | None = None,
+) -> relay_pb2.ProducerEnvelope:
+    fields = {
+        "processing_job_id": session.processing_job_id,
+        "producer_session_id": config.producer_session_id,
+        "unresolved_frame_sets": [_proto_key(key) for key in unresolved],
+    }
+    if resume_token:
+        fields["reconciliation_resume_token"] = resume_token
+    return relay_pb2.ProducerEnvelope(
+        reconciliation=relay_pb2.ReconciliationRequest(**fields)
+    )
+
+
 def _manifest_members(
     claim: ClaimedFrameSet,
 ) -> tuple[list[relay_pb2.CaptureConfigSnapshot], dict[str, dict]]:
