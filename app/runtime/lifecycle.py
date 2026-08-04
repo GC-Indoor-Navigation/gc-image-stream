@@ -28,6 +28,9 @@ from app.infrastructure.grpc.processing_relay_client import (
     processing_frame_set_relay_service,
     processing_relay_service,
 )
+from app.infrastructure.grpc.live_relay_v2_client import (
+    processing_live_relay_v2_client,
+)
 from app.services.ingest.camera_session_manager import camera_session_manager
 from app.services.ingest.reconciliation import reconcile_archive
 from app.db import SessionLocal
@@ -70,6 +73,7 @@ async def startup_application():
         "orphan_files": reconciliation.orphan_files,
         "partial_files": reconciliation.partial_files,
     }
+    processing_live_relay_v2_client.configure(enabled=False)
     if reconciliation.degraded_frames or reconciliation.orphan_files or reconciliation.partial_files:
         logger.warning(format_log_event("archive_reconciliation_degraded", **reconciliation_fields))
     else:
@@ -211,6 +215,7 @@ async def shutdown_application():
     grpc_ingest_service.stop()
     processing_relay_service.stop()
     processing_frame_set_relay_service.stop()
+    processing_live_relay_v2_client.stop()
     stream_sync_service.clear()
     clear_stream_experiment_recorder()
     logger.info(format_log_event("camera_sessions_stopped"))
