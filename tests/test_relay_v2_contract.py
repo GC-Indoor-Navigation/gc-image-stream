@@ -1,4 +1,20 @@
+import hashlib
+from pathlib import Path
+
+import pytest
+from google.protobuf import descriptor_pb2
+
 from app.infrastructure.grpc.generated import live_frame_relay_v2_pb2
+from app.infrastructure.grpc.relay_v2_contract import (
+    PayloadLimitExceeded,
+    parse_with_limit,
+    serialize_with_limit,
+)
+
+
+ROOT = Path(__file__).resolve().parents[1]
+ARTIFACTS = ROOT / "proto" / "artifacts"
+FIXTURES = ROOT / "tests" / "fixtures" / "relay_v2"
 
 
 def test_generated_v2_client_contract_is_bidirectional():
@@ -53,3 +69,64 @@ def test_generated_v2_client_preserves_hello_and_credit_messages():
     assert restored_hello.hello.capture_run_id == "run-1"
     assert restored_credit.WhichOneof("body") == "credit"
     assert restored_credit.credit.scope.stream_epoch == "epoch-1"
+
+
+def test_canonical_descriptor_and_binary_fixture_match_generated_client():
+    descriptor_payload = (ARTIFACTS / "live_frame_relay_v2.desc").read_bytes()
+    descriptor_hash = (
+        ARTIFACTS / "live_frame_relay_v2.sha256"
+    ).read_text(encoding="ascii")
+    descriptor_set = descriptor_pb2.FileDescriptorSet.FromString(
+        descriptor_payload
+    )
+    canonical = next(
+        item
+        for item in descriptor_set.file
+        if item.name == "live_frame_relay_v2.proto"
+    )
+    generated = descriptor_pb2.FileDescriptorProto.FromString(
+        live_frame_relay_v2_pb2.DESCRIPTOR.serialized_pb
+    )
+    _clear_json_names(canonical)
+    _clear_json_names(generated)
+    fixture = (FIXTURES / "producer_hello.bin").read_bytes()
+    fixture_hash = (FIXTURES / "producer_hello.sha256").read_text(
+        encoding="ascii"
+    )
+
+    assert hashlib.sha256(descriptor_payload).hexdigest() == descriptor_hash
+    assert canonical.SerializeToString(deterministic=True) == (
+        generated.SerializeToString(deterministic=True)
+    )
+    assert hashlib.sha256(fixture).hexdigest() == fixture_hash
+    assert live_frame_relay_v2_pb2.ProducerEnvelope.FromString(
+        fixture
+    ).hello.capture_run_id == "fixture-capture-run"
+
+
+def test_unknown_fields_and_negotiated_payload_limit_are_safe():
+    fixture = (FIXTURES / "producer_hello.bin").read_bytes()
+    unknown_field = b"\xf8\x07\x01"
+    with_unknown = fixture + unknown_field
+    message = live_frame_relay_v2_pb2.ProducerEnvelope.FromString(with_unknown)
+
+    assert message.SerializeToString(deterministic=True).endswith(unknown_field)
+    with pytest.raises(PayloadLimitExceeded):
+        parse_with_limit(
+            live_frame_relay_v2_pb2.ProducerEnvelope,
+            fixture,
+            maximum_payload_bytes=len(fixture) - 1,
+        )
+    assert serialize_with_limit(
+        message,
+        maximum_payload_bytes=len(with_unknown),
+    ) == with_unknown
+
+
+def _clear_json_names(file_descriptor) -> None:
+    pending = list(file_descriptor.message_type)
+    while pending:
+        message = pending.pop()
+        pending.extend(message.nested_type)
+        for field in message.field:
+            field.ClearField("json_name")
