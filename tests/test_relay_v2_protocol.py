@@ -112,10 +112,12 @@ def test_hello_includes_watermark_unresolved_and_capture_contract(tmp_path):
         claim=claim,
         watermark=claim.key,
         unresolved=(claim.key,),
+        proposed_processing_job_id="job-1",
         measured_utc_ms=10_040,
     ).hello
 
     assert hello.capture_run_id == "run-1"
+    assert hello.proposed_processing_job_id == "job-1"
     assert hello.last_offered_watermark.frame_set_uid == "set-7"
     assert hello.unresolved_frame_sets[0].frame_set_id == 7
     assert hello.capture_configs[0].width == 1920

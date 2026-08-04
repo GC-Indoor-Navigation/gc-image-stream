@@ -219,13 +219,19 @@ def migrate_relay_v2_client_state_schema(engine: Engine) -> bool:
         column["name"]
         for column in inspector.get_columns("relay_v2_client_state")
     }
-    if "reoffer_frame_set_uid" in columns:
+    required = {
+        "reoffer_frame_set_uid": "VARCHAR",
+        "processing_job_id": "VARCHAR",
+        "processing_job_capture_run_id": "VARCHAR",
+    }
+    missing = set(required) - columns
+    if not missing:
         return False
     with engine.begin() as connection:
-        connection.exec_driver_sql(
-            "ALTER TABLE relay_v2_client_state "
-            "ADD COLUMN reoffer_frame_set_uid VARCHAR"
-        )
+        for name in sorted(missing):
+            connection.exec_driver_sql(
+                f"ALTER TABLE relay_v2_client_state ADD COLUMN {name} {required[name]}"
+            )
     return True
 
 

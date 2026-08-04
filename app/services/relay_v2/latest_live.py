@@ -137,6 +137,41 @@ class LatestLiveStore:
         current = self.current_in_flight()
         return (current,) if current is not None else ()
 
+    def processing_job_for(self, capture_run_id: str) -> str | None:
+        with self._session_factory() as db:
+            state = db.get(RelayV2ClientState, self._SINGLETON_ID)
+            if (
+                state is None
+                or state.processing_job_capture_run_id != capture_run_id
+            ):
+                return None
+            return state.processing_job_id
+
+    def bind_processing_job(
+        self,
+        *,
+        capture_run_id: str,
+        processing_job_id: str,
+        updated_at_ms: int | None = None,
+    ) -> None:
+        if not capture_run_id or not processing_job_id:
+            raise ValueError("capture run and processing job IDs are required")
+        timestamp_ms = updated_at_ms or int(time.time() * 1000)
+        with self._session_factory() as db:
+            self._ensure_state_row(db, timestamp_ms)
+            state = db.get(RelayV2ClientState, self._SINGLETON_ID)
+            if (
+                state.processing_job_capture_run_id == capture_run_id
+                and state.processing_job_id not in {None, processing_job_id}
+            ):
+                raise RuntimeError(
+                    "processing job changed within one capture run"
+                )
+            state.processing_job_capture_run_id = capture_run_id
+            state.processing_job_id = processing_job_id
+            state.updated_at_ms = timestamp_ms
+            db.commit()
+
     def snapshot_for_hello(self) -> ClaimedFrameSet | None:
         with self._session_factory() as db:
             state = db.get(RelayV2ClientState, self._SINGLETON_ID)

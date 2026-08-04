@@ -52,6 +52,7 @@ def build_producer_hello(
     claim: ClaimedFrameSet,
     watermark: FrameSetKey | None,
     unresolved: tuple[FrameSetKey, ...],
+    proposed_processing_job_id: str | None = None,
     measured_utc_ms: int | None = None,
 ) -> relay_pb2.ProducerEnvelope:
     capture_configs, _ = _manifest_members(claim)
@@ -81,6 +82,8 @@ def build_producer_hello(
     }
     if watermark is not None:
         fields["last_offered_watermark"] = _proto_key(watermark)
+    if proposed_processing_job_id:
+        fields["proposed_processing_job_id"] = proposed_processing_job_id
     return relay_pb2.ProducerEnvelope(
         hello=relay_pb2.ProducerHello(**fields)
     )

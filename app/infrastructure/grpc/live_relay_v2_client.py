@@ -201,6 +201,9 @@ class ProcessingLiveRelayV2Client:
                 claim=hello_snapshot,
                 watermark=store.offered_watermark(),
                 unresolved=store.unresolved_keys(),
+                proposed_processing_job_id=store.processing_job_for(
+                    hello_snapshot.key.capture_run_id
+                ),
                 measured_utc_ms=self._utc_now_ms(),
             )
         )
@@ -225,6 +228,11 @@ class ProcessingLiveRelayV2Client:
                             f"relay v2 disabled: {envelope.hello_rejected.detail_code}"
                         )
                     session = accept_hello(envelope, config=config)
+                    store.bind_processing_job(
+                        capture_run_id=hello_snapshot.key.capture_run_id,
+                        processing_job_id=session.processing_job_id,
+                        updated_at_ms=self._utc_now_ms(),
+                    )
                     connected = True
                     with self._lock:
                         self._connection_count += 1

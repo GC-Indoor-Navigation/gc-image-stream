@@ -1,5 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
+
 from app.models import (
     CaptureRun,
     CaptureSession,
@@ -240,3 +242,20 @@ def test_reconciled_not_found_does_not_reoffer_stale_identity(session_factory):
 
     assert next_claim is not None
     assert next_claim.key.frame_set_uid == "new"
+
+
+def test_processing_job_is_stable_within_capture_run(session_factory):
+    store = LatestLiveStore(session_factory)
+
+    store.bind_processing_job(
+        capture_run_id="run-1",
+        processing_job_id="job-1",
+    )
+
+    assert store.processing_job_for("run-1") == "job-1"
+    assert store.processing_job_for("run-2") is None
+    with pytest.raises(RuntimeError, match="changed within"):
+        store.bind_processing_job(
+            capture_run_id="run-1",
+            processing_job_id="job-other",
+        )

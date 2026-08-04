@@ -152,4 +152,6 @@ class RelayV2ClientState(Base):
     watermark_frame_set_id = Column(BigInteger, nullable=True)
     watermark_frame_set_uid = Column(String, nullable=True)
     reoffer_frame_set_uid = Column(String, nullable=True)
+    processing_job_id = Column(String, nullable=True)
+    processing_job_capture_run_id = Column(String, nullable=True)
     updated_at_ms = Column(BigInteger, nullable=False)
