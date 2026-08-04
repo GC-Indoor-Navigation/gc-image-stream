@@ -137,3 +137,18 @@ class FrameSetDeliveryProjection(Base):
     legacy_relay_state = Column(String, nullable=False)
     last_reason = Column(String, nullable=True)
     updated_at_ms = Column(BigInteger, nullable=False)
+
+
+class RelayV2ClientState(Base):
+    __tablename__ = "relay_v2_client_state"
+
+    singleton_id = Column(Integer, primary_key=True)
+    in_flight_frame_set_uid = Column(String, nullable=True)
+    in_flight_credit_id = Column(String, nullable=True)
+    in_flight_processor_instance_id = Column(String, nullable=True)
+    in_flight_stream_epoch = Column(String, nullable=True)
+    in_flight_offered_at_ms = Column(BigInteger, nullable=True)
+    watermark_capture_run_id = Column(String, nullable=True)
+    watermark_frame_set_id = Column(BigInteger, nullable=True)
+    watermark_frame_set_uid = Column(String, nullable=True)
+    updated_at_ms = Column(BigInteger, nullable=False)

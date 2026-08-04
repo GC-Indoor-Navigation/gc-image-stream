@@ -6,6 +6,7 @@ from app.models.frame_set_manifest import (
     FrameSetManifest,
     FrameSetDeliveryProjection,
     FrameSetMember,
+    RelayV2ClientState,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "FrameSetManifest",
     "FrameSetDeliveryProjection",
     "FrameSetMember",
+    "RelayV2ClientState",
 ]
