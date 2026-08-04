@@ -1,0 +1,263 @@
+syntax = "proto3";
+
+package gc_image_stream.processing.v2;
+
+// The v1 FrameRelayService remains frozen in processing_relay.proto.
+service LiveFrameRelayService {
+  rpc Relay(stream ProducerEnvelope) returns (stream ProcessorEnvelope);
+}
+
+enum RelayMode {
+  RELAY_MODE_UNSPECIFIED = 0;
+  LIVE = 1;
+  REPLAY = 2;
+  LEGACY = 3;
+}
+
+enum RuntimeSafetyState {
+  RUNTIME_SAFETY_STATE_UNSPECIFIED = 0;
+  STARTING = 1;
+  READY = 2;
+  DEGRADED = 3;
+  UNAVAILABLE = 4;
+  FAILSAFE = 5;
+}
+
+enum ProcessingAttemptState {
+  PROCESSING_ATTEMPT_STATE_UNSPECIFIED = 0;
+  ACCEPTED = 1;
+  STARTED = 2;
+  REJECTED = 3;
+  COMPLETED = 4;
+  FAILED = 5;
+  RECOVERY_REQUIRED = 6;
+}
+
+enum Reason {
+  REASON_UNSPECIFIED = 0;
+  NO_DATA = 1;
+  SUPERSEDED_BEFORE_OFFER = 2;
+  EXPIRED_BEFORE_OFFER = 3;
+  CREDIT_EXPIRED = 4;
+  CREDIT_INVALID = 5;
+  STREAM_EPOCH_FENCED = 6;
+  CREDIT_CANCELLED = 7;
+  EXPIRED_AT_ADMISSION = 8;
+  EXPIRED_BEFORE_START = 9;
+  DUPLICATE = 10;
+  OUT_OF_ORDER = 11;
+  PAYLOAD_TOO_LARGE = 12;
+  INVALID_SCHEMA = 13;
+  IDENTITY_MISSING = 14;
+  IDENTITY_CONFLICT = 15;
+  INTEGRITY_ERROR = 16;
+  CAMERA_SET_MISMATCH = 17;
+  CAPTURE_CONFIG_MISMATCH = 18;
+  PROFILE_MISMATCH = 19;
+  SYNCHRONIZATION_SPAN_EXCEEDED = 20;
+  CLOCK_UNHEALTHY = 21;
+  PROCESSING_ERROR = 22;
+  PROCESSING_TIMEOUT = 23;
+  SPOOL_ERROR = 24;
+  STORE_ERROR = 25;
+  ARCHIVE_IO_ERROR = 26;
+  ARCHIVE_METADATA_ERROR = 27;
+  PROCESS_CRASHED = 28;
+  SHUTDOWN_INTERRUPTED = 29;
+  ALERT_DELIVERY_TIMEOUT = 30;
+  ALERT_RECEIVER_REJECTED = 31;
+  ALERT_OUTBOX_PRESSURE = 32;
+  MODEL_UNHEALTHY = 33;
+  ESTIMATOR_UNHEALTHY = 34;
+  SUBJECT_IDENTITY_UNSAFE = 35;
+  OBSERVATION_GAP_EXCEEDED = 36;
+  CALIBRATION_UNHEALTHY = 37;
+  SUPERVISOR_HEARTBEAT_EXPIRED = 38;
+  ADMIN_DISABLED = 39;
+  MODE_LEASE_CONFLICT = 40;
+  RECONCILED_AFTER_RECONNECT = 41;
+}
+
+message ProducerEnvelope {
+  oneof body {
+    ProducerHello hello = 1;
+    CreditedFrameSet frame_set = 2;
+    NoData no_data = 3;
+    ReconciliationRequest reconciliation = 4;
+  }
+}
+
+message ProcessorEnvelope {
+  oneof body {
+    HelloAccepted hello_accepted = 1;
+    HelloRejected hello_rejected = 2;
+    ProcessorCredit credit = 3;
+    FrameStatusEvent status = 4;
+    ReconciliationResponse reconciliation = 5;
+  }
+}
+
+message FrameSetKey {
+  string capture_run_id = 1;
+  uint64 frame_set_id = 2;
+  string frame_set_uid = 3;
+}
+
+message CreditScope {
+  string processor_instance_id = 1;
+  string stream_epoch = 2;
+  string credit_id = 3;
+}
+
+message CaptureConfigSnapshot {
+  string camera_stream_id = 1;
+  string capture_config_digest = 2;
+  uint32 width = 3;
+  uint32 height = 4;
+  int32 orientation_deg = 5;
+  bool mirrored = 6;
+  string encoding = 7;
+  string color_space = 8;
+  optional string capture_intrinsic_reference = 9;
+}
+
+message ProducerClockHealth {
+  RuntimeSafetyState state = 1;
+  uint64 maximum_uncertainty_ms = 2;
+  int64 measured_utc_ms = 3;
+  string clock_source = 4;
+}
+
+message ProducerHello {
+  uint32 protocol_version = 1;
+  uint32 schema_version = 2;
+  string producer_session_id = 3;
+  optional string capture_session_id = 4;
+  string capture_run_id = 5;
+  optional string proposed_processing_job_id = 6;
+  RelayMode mode = 7;
+  string processing_profile_digest = 8;
+  repeated string expected_camera_stream_ids = 9;
+  repeated CaptureConfigSnapshot capture_configs = 10;
+  ProducerClockHealth clock_health = 11;
+  optional FrameSetKey last_offered_watermark = 12;
+  repeated FrameSetKey unresolved_frame_sets = 13;
+  optional string reconciliation_resume_token = 14;
+}
+
+message HelloAccepted {
+  uint32 protocol_version = 1;
+  uint32 schema_version = 2;
+  string processing_job_id = 3;
+  string processor_instance_id = 4;
+  string stream_epoch = 5;
+  uint64 maximum_payload_bytes = 6;
+  string processing_profile_digest = 7;
+  bool reconciliation_required = 8;
+  optional string reconciliation_resume_token = 9;
+}
+
+message HelloRejected {
+  Reason reason = 1;
+  string detail_code = 2;
+  bool retryable = 3;
+}
+
+message ProcessorCredit {
+  CreditScope scope = 1;
+  uint64 credit_lease_duration_ms = 2;
+  optional int64 issued_utc_ms = 3;
+  optional FrameSetKey after_frame_set_key = 4;
+  int64 earliest_acceptable_freshness_origin_utc_ms = 5;
+  uint64 ingress_reserve_ms = 6;
+  uint64 maximum_payload_bytes = 7;
+  uint32 schema_version = 8;
+  uint64 maximum_frame_age_ms = 9;
+}
+
+message NoData {
+  CreditScope scope = 1;
+  Reason reason = 2;
+  optional FrameSetKey newest_known_frame_set = 3;
+}
+
+message ClockCorrection {
+  string source_clock_domain = 1;
+  int64 estimated_offset_ms = 2;
+  sint64 estimated_drift_ppb = 3;
+  uint64 uncertainty_ms = 4;
+  int64 measured_utc_ms = 5;
+}
+
+message FramePayload {
+  string source_frame_uid = 1;
+  string source_session_id = 2;
+  string camera_stream_id = 3;
+  uint64 frame_sequence = 4;
+  int64 capture_timestamp_device_ms = 5;
+  int64 capture_timestamp_corrected_utc_ms = 6;
+  ClockCorrection clock_correction = 7;
+  int64 stream_received_utc_ms = 8;
+  uint32 width = 9;
+  uint32 height = 10;
+  int32 orientation_deg = 11;
+  bool mirrored = 12;
+  string encoding = 13;
+  string color_space = 14;
+  string capture_config_digest = 15;
+  uint64 content_size_bytes = 16;
+  string content_digest = 17;
+  bytes image_bytes = 18;
+}
+
+message CreditedFrameSet {
+  CreditScope credit_scope = 1;
+  string processing_job_id = 2;
+  string producer_session_id = 3;
+  optional string capture_session_id = 4;
+  FrameSetKey key = 5;
+  RelayMode mode = 6;
+  string manifest_digest = 7;
+  string content_digest = 8;
+  int64 ordering_anchor_utc_ms = 9;
+  int64 freshness_origin_utc_ms = 10;
+  int64 synchronized_utc_ms = 11;
+  int64 offered_utc_ms = 12;
+  uint64 producer_freshness_budget_ms = 13;
+  int64 effective_deadline_utc_ms = 14;
+  uint64 synchronization_span_ms = 15;
+  uint64 clock_uncertainty_ms = 16;
+  repeated CaptureConfigSnapshot capture_configs = 17;
+  repeated FramePayload frames = 18;
+  int64 alert_deadline_utc_ms = 19;
+  uint64 reserved_delivery_bound_ms = 20;
+  string processing_profile_digest = 21;
+}
+
+message FrameStatusEvent {
+  string processing_job_id = 1;
+  FrameSetKey key = 2;
+  optional string processing_attempt_id = 3;
+  ProcessingAttemptState state = 4;
+  Reason reason = 5;
+  optional int64 accepted_utc_ms = 6;
+  optional int64 started_utc_ms = 7;
+  optional int64 completed_utc_ms = 8;
+  optional bool processing_deadline_met = 9;
+  optional string result_id = 10;
+  optional string result_digest = 11;
+  string detail_code = 12;
+}
+
+message ReconciliationRequest {
+  string processing_job_id = 1;
+  string producer_session_id = 2;
+  repeated FrameSetKey unresolved_frame_sets = 3;
+  optional string reconciliation_resume_token = 4;
+}
+
+message ReconciliationResponse {
+  repeated FrameStatusEvent canonical_statuses = 1;
+  optional string reconciliation_resume_token = 2;
+  bool complete = 3;
+}

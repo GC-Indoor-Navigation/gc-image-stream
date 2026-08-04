@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from . import frame_ingest_pb2 as frame__ingest__pb2
+from . import live_frame_relay_v2_pb2 as live__frame__relay__v2__pb2
 
 GRPC_GENERATED_VERSION = '1.80.0'
 GRPC_VERSION = grpc.__version__
@@ -18,15 +18,16 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in frame_ingest_pb2_grpc.py depends on'
+        + ' but the generated code in live_frame_relay_v2_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
     )
 
 
-class FrameIngestServiceStub(object):
-    """Missing associated documentation comment in .proto file."""
+class LiveFrameRelayServiceStub(object):
+    """The v1 FrameRelayService remains frozen in processing_relay.proto.
+    """
 
     def __init__(self, channel):
         """Constructor.
@@ -34,43 +35,45 @@ class FrameIngestServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.StreamFrames = channel.stream_unary(
-                '/gc.collector.v1.FrameIngestService/StreamFrames',
-                request_serializer=frame__ingest__pb2.FramePacket.SerializeToString,
-                response_deserializer=frame__ingest__pb2.StreamFramesResponse.FromString,
+        self.Relay = channel.stream_stream(
+                '/gc_image_stream.processing.v2.LiveFrameRelayService/Relay',
+                request_serializer=live__frame__relay__v2__pb2.ProducerEnvelope.SerializeToString,
+                response_deserializer=live__frame__relay__v2__pb2.ProcessorEnvelope.FromString,
                 _registered_method=True)
 
 
-class FrameIngestServiceServicer(object):
-    """Missing associated documentation comment in .proto file."""
+class LiveFrameRelayServiceServicer(object):
+    """The v1 FrameRelayService remains frozen in processing_relay.proto.
+    """
 
-    def StreamFrames(self, request_iterator, context):
+    def Relay(self, request_iterator, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
 
-def add_FrameIngestServiceServicer_to_server(servicer, server):
+def add_LiveFrameRelayServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'StreamFrames': grpc.stream_unary_rpc_method_handler(
-                    servicer.StreamFrames,
-                    request_deserializer=frame__ingest__pb2.FramePacket.FromString,
-                    response_serializer=frame__ingest__pb2.StreamFramesResponse.SerializeToString,
+            'Relay': grpc.stream_stream_rpc_method_handler(
+                    servicer.Relay,
+                    request_deserializer=live__frame__relay__v2__pb2.ProducerEnvelope.FromString,
+                    response_serializer=live__frame__relay__v2__pb2.ProcessorEnvelope.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'gc.collector.v1.FrameIngestService', rpc_method_handlers)
+            'gc_image_stream.processing.v2.LiveFrameRelayService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('gc.collector.v1.FrameIngestService', rpc_method_handlers)
+    server.add_registered_method_handlers('gc_image_stream.processing.v2.LiveFrameRelayService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
-class FrameIngestService(object):
-    """Missing associated documentation comment in .proto file."""
+class LiveFrameRelayService(object):
+    """The v1 FrameRelayService remains frozen in processing_relay.proto.
+    """
 
     @staticmethod
-    def StreamFrames(request_iterator,
+    def Relay(request_iterator,
             target,
             options=(),
             channel_credentials=None,
@@ -80,12 +83,12 @@ class FrameIngestService(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.stream_unary(
+        return grpc.experimental.stream_stream(
             request_iterator,
             target,
-            '/gc.collector.v1.FrameIngestService/StreamFrames',
-            frame__ingest__pb2.FramePacket.SerializeToString,
-            frame__ingest__pb2.StreamFramesResponse.FromString,
+            '/gc_image_stream.processing.v2.LiveFrameRelayService/Relay',
+            live__frame__relay__v2__pb2.ProducerEnvelope.SerializeToString,
+            live__frame__relay__v2__pb2.ProcessorEnvelope.FromString,
             options,
             channel_credentials,
             insecure,

@@ -138,4 +138,3 @@ class FrameRelayService(object):
             timeout,
             metadata,
             _registered_method=True)
-
