@@ -1,4 +1,5 @@
 import logging
+from uuid import uuid4
 
 from app.core.cameras import (
     CAMERA_SESSIONS_ENABLED,
@@ -16,6 +17,11 @@ from app.core.server import (
     STREAM_RELAY_MODE,
     STREAM_RELAY_TARGET,
     STREAM_RELAY_TIMEOUT_SEC,
+    STREAM_RELAY_V2_MAXIMUM_CLOCK_UNCERTAINTY_MS,
+    STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST,
+    STREAM_RELAY_V2_PRODUCER_FRESHNESS_BUDGET_MS,
+    STREAM_RELAY_V2_SHADOW_ENABLED,
+    STREAM_RELAY_V2_TARGET,
     STREAM_SYNC_BUFFER_SIZE,
     STREAM_SYNC_ENABLED,
     STREAM_SYNC_EXPECTED_CAMERAS,
@@ -34,6 +40,7 @@ from app.infrastructure.grpc.live_relay_v2_client import (
 from app.services.ingest.camera_session_manager import camera_session_manager
 from app.services.ingest.reconciliation import reconcile_archive
 from app.db import SessionLocal
+from app.services.relay_v2 import ProtocolConfig
 from app.services.stream.stream_experiment import (
     clear_stream_experiment_recorder,
     configure_stream_experiment_recorder,
@@ -73,7 +80,27 @@ async def startup_application():
         "orphan_files": reconciliation.orphan_files,
         "partial_files": reconciliation.partial_files,
     }
-    processing_live_relay_v2_client.configure(enabled=False)
+    processing_live_relay_v2_client.configure(
+        target=STREAM_RELAY_V2_TARGET,
+        enabled=STREAM_RELAY_V2_SHADOW_ENABLED,
+        session_factory=(SessionLocal if STREAM_RELAY_V2_SHADOW_ENABLED else None),
+        protocol_config=(
+            ProtocolConfig(
+                producer_session_id=str(uuid4()),
+                processing_profile_digest=(
+                    STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST
+                ),
+                producer_freshness_budget_ms=(
+                    STREAM_RELAY_V2_PRODUCER_FRESHNESS_BUDGET_MS
+                ),
+                maximum_clock_uncertainty_ms=(
+                    STREAM_RELAY_V2_MAXIMUM_CLOCK_UNCERTAINTY_MS
+                ),
+            )
+            if STREAM_RELAY_V2_SHADOW_ENABLED
+            else None
+        ),
+    )
     if reconciliation.degraded_frames or reconciliation.orphan_files or reconciliation.partial_files:
         logger.warning(format_log_event("archive_reconciliation_degraded", **reconciliation_fields))
     else:
@@ -180,6 +207,18 @@ async def startup_application():
             window_ms=STREAM_SYNC_WINDOW_MS,
         )
     )
+
+    if STREAM_RELAY_V2_SHADOW_ENABLED:
+        processing_live_relay_v2_client.start()
+        logger.info(
+            format_log_event(
+                "stream_relay_v2_shadow_started",
+                target=STREAM_RELAY_V2_TARGET,
+                alerts_enabled=False,
+            )
+        )
+    else:
+        logger.info(format_log_event("stream_relay_v2_shadow_disabled"))
 
     if grpc_ingest_enabled:
         grpc_ingest_service.configure(

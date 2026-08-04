@@ -89,3 +89,46 @@ def test_server_config_falls_back_to_legacy_frame_set_target(monkeypatch):
     reloaded = reload(server)
 
     assert reloaded.STREAM_RELAY_TARGET == "127.0.0.1:50052"
+
+
+def test_v2_shadow_is_disabled_by_default(monkeypatch):
+    from importlib import reload
+
+    import app.core.server as server
+
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///./frames.db")
+    monkeypatch.setenv("STORAGE_DIR", "storage")
+    monkeypatch.setenv("STREAM_RELAY_MODE", "off")
+    monkeypatch.delenv("STREAM_RELAY_V2_SHADOW_ENABLED", raising=False)
+
+    reloaded = reload(server)
+
+    assert reloaded.STREAM_RELAY_V2_SHADOW_ENABLED is False
+
+
+def test_v2_shadow_requires_target_and_profile(monkeypatch):
+    from importlib import reload
+
+    import app.core.server as server
+
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///./frames.db")
+    monkeypatch.setenv("STORAGE_DIR", "storage")
+    monkeypatch.setenv("STREAM_RELAY_MODE", "off")
+    monkeypatch.setenv("STREAM_RELAY_V2_SHADOW_ENABLED", "true")
+    monkeypatch.delenv("STREAM_RELAY_V2_TARGET", raising=False)
+    monkeypatch.delenv("STREAM_RELAY_TARGET", raising=False)
+    monkeypatch.delenv(
+        "STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST",
+        raising=False,
+    )
+
+    with pytest.raises(RuntimeError, match="V2_TARGET"):
+        reload(server)
+
+    monkeypatch.setenv("STREAM_RELAY_V2_TARGET", "127.0.0.1:50051")
+    with pytest.raises(RuntimeError, match="PROFILE_DIGEST"):
+        reload(server)
+
+    monkeypatch.setenv("STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST", "profile")
+    reloaded = reload(server)
+    assert reloaded.STREAM_RELAY_V2_SHADOW_ENABLED is True

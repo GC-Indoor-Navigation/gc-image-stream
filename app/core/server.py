@@ -59,6 +59,42 @@ STREAM_RELAY_TIMEOUT_SEC = (
     if _stream_relay_timeout_sec > 0
     else None
 )
+STREAM_RELAY_V2_SHADOW_ENABLED = get_optional_bool_env(
+    "STREAM_RELAY_V2_SHADOW_ENABLED",
+    False,
+)
+STREAM_RELAY_V2_TARGET = get_optional_str_env(
+    "STREAM_RELAY_V2_TARGET",
+    STREAM_RELAY_TARGET,
+)
+STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST = get_optional_str_env(
+    "STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST"
+)
+STREAM_RELAY_V2_PRODUCER_FRESHNESS_BUDGET_MS = get_optional_int_env(
+    "STREAM_RELAY_V2_PRODUCER_FRESHNESS_BUDGET_MS",
+    500,
+)
+STREAM_RELAY_V2_MAXIMUM_CLOCK_UNCERTAINTY_MS = get_optional_int_env(
+    "STREAM_RELAY_V2_MAXIMUM_CLOCK_UNCERTAINTY_MS",
+    0,
+)
+if STREAM_RELAY_V2_SHADOW_ENABLED:
+    if not STREAM_RELAY_V2_TARGET:
+        raise RuntimeError(
+            "STREAM_RELAY_V2_TARGET is required when v2 shadow is enabled"
+        )
+    if not STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST:
+        raise RuntimeError(
+            "STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST is required when v2 shadow is enabled"
+        )
+    if STREAM_RELAY_V2_PRODUCER_FRESHNESS_BUDGET_MS <= 0:
+        raise RuntimeError(
+            "STREAM_RELAY_V2_PRODUCER_FRESHNESS_BUDGET_MS must be positive"
+        )
+    if STREAM_RELAY_V2_MAXIMUM_CLOCK_UNCERTAINTY_MS < 0:
+        raise RuntimeError(
+            "STREAM_RELAY_V2_MAXIMUM_CLOCK_UNCERTAINTY_MS must be nonnegative"
+        )
 STREAM_SYNC_ENABLED = get_optional_bool_env("STREAM_SYNC_ENABLED", False)
 STREAM_SYNC_WINDOW_MS = get_optional_int_env("STREAM_SYNC_WINDOW_MS", 50)
 STREAM_SYNC_EXPECTED_CAMERAS = get_optional_csv_env("STREAM_SYNC_EXPECTED_CAMERAS")
