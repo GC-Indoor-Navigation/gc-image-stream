@@ -29,6 +29,10 @@ from app.services.relay_v2 import (
     bind_authorized_claim,
     credit_identity,
 )
+from app.services.session_identity import (
+    ActiveSessionCredentialStore,
+    active_session_credentials,
+)
 
 
 LOGGER = logging.getLogger("gc_image_stream.relay_v2")
@@ -64,6 +68,7 @@ class ProcessingLiveRelayV2Client:
         monotonic: Callable[[], float] = time.monotonic,
         utc_now_ms: Callable[[], int] | None = None,
         backoff: ReconnectBackoff | None = None,
+        credential_store: ActiveSessionCredentialStore = active_session_credentials,
     ):
         self.enabled = False
         self.target = ""
@@ -82,6 +87,7 @@ class ProcessingLiveRelayV2Client:
         self._reconnect_count = 0
         self._offered_count = 0
         self._no_data_count = 0
+        self._credential_store = credential_store
 
     def configure(
         self,
@@ -195,6 +201,11 @@ class ProcessingLiveRelayV2Client:
             self._stop_event.wait(0.05)
             return False
         config = bind_authorized_claim(base_config, hello_snapshot)
+        credential = (
+            self._credential_store.resolve_for_claim(hello_snapshot)
+            if hello_snapshot.processing_job_id
+            else None
+        )
 
         outgoing: queue.Queue = queue.Queue(maxsize=2)
         outgoing.put(
@@ -219,7 +230,15 @@ class ProcessingLiveRelayV2Client:
         reconciled = not bool(store.unresolved_keys())
         connected = False
         try:
-            responses = self.build_stub(channel)(self._requests(outgoing))
+            call = self.build_stub(channel)
+            responses = (
+                call(
+                    self._requests(outgoing),
+                    metadata=(("authorization", f"Bearer {credential.token}"),),
+                )
+                if credential is not None
+                else call(self._requests(outgoing))
+            )
             for envelope in responses:
                 if self._stop_event.is_set():
                     break

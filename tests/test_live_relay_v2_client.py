@@ -5,6 +5,7 @@ import pytest
 
 from app.infrastructure.grpc.generated import live_frame_relay_v2_pb2 as relay_pb2
 from app.infrastructure.grpc.live_relay_v2_client import (
+    PermanentRelayError,
     ProcessingLiveRelayV2Client,
     ReconnectBackoff,
 )
@@ -17,6 +18,10 @@ from app.models import (
 )
 from app.services.identity import canonical_json, sha256_bytes
 from app.services.relay_v2 import LatestLiveStore, NegotiatedSession, ProtocolConfig
+from app.services.session_identity import (
+    ActiveSessionCredentialStore,
+    AuthorizedSessionScope,
+)
 
 
 def _config():
@@ -53,7 +58,7 @@ def _credit():
     )
 
 
-def _persist_candidate(session_factory, tmp_path):
+def _persist_candidate(session_factory, tmp_path, *, authorized=False):
     payload = b"frame"
     frame_path = tmp_path / "frame.jpg"
     frame_path.write_bytes(payload)
@@ -103,6 +108,12 @@ def _persist_candidate(session_factory, tmp_path):
                 sync_window_ms=50,
                 synchronized_at_ms=10_020,
                 member_count=1,
+                tenant_id="tenant-1" if authorized else None,
+                site_id="site-1" if authorized else None,
+                processing_job_id="job-1" if authorized else None,
+                profile_digest="a" * 64 if authorized else None,
+                authorized_subject="user-1" if authorized else None,
+                session_token_jti="job-1" if authorized else None,
             )
         )
         db.add(
@@ -118,6 +129,7 @@ def _persist_candidate(session_factory, tmp_path):
                 image_size=len(payload),
                 content_digest=sha256_bytes(payload),
                 file_path=str(frame_path),
+                authorized_camera_id="camera-1" if authorized else None,
             )
         )
         db.add(
@@ -225,3 +237,68 @@ def test_shutdown_fences_in_flight_as_unresolved(session_factory, tmp_path):
         projection = db.get(FrameSetDeliveryProjection, "set-1")
         assert projection.live_state == "UNRESOLVED"
         assert projection.last_reason == "SHUTDOWN_INTERRUPTED"
+
+
+def test_authorized_relay_forwards_token_as_grpc_metadata(
+    session_factory,
+    tmp_path,
+    monkeypatch,
+):
+    _persist_candidate(session_factory, tmp_path, authorized=True)
+    credentials = ActiveSessionCredentialStore(now=lambda: 1_000)
+    credentials.register(
+        "signed-session-token",
+        AuthorizedSessionScope(
+            tenant_id="tenant-1",
+            site_id="site-1",
+            capture_session_id="capture-session",
+            processing_job_id="job-1",
+            camera_ids=frozenset({"camera-1"}),
+            profile_digest="a" * 64,
+            authorized_subject="user-1",
+            token_jti="job-1",
+            expires_at=1_100,
+        ),
+    )
+    observed = {}
+
+    class Channel:
+        def close(self):
+            observed["closed"] = True
+
+    def relay(requests, metadata=None):
+        observed["metadata"] = metadata
+        observed["hello"] = next(requests).hello
+        yield relay_pb2.ProcessorEnvelope(
+            hello_rejected=relay_pb2.HelloRejected(
+                reason=relay_pb2.IDENTITY_CONFLICT,
+                detail_code="TEST_STOP",
+                retryable=False,
+            )
+        )
+
+    client = ProcessingLiveRelayV2Client(
+        channel_factory=lambda target: Channel(),
+        credential_store=credentials,
+    )
+    monkeypatch.setattr(client, "build_stub", lambda channel: relay)
+    client.configure(
+        target="processing:50053",
+        enabled=True,
+        session_factory=session_factory,
+        protocol_config=ProtocolConfig(
+            producer_session_id="producer-1",
+            processing_profile_digest=None,
+            producer_freshness_budget_ms=500,
+        ),
+    )
+
+    with pytest.raises(PermanentRelayError, match="TEST_STOP"):
+        client._run_connection()
+
+    assert observed["metadata"] == (
+        ("authorization", "Bearer signed-session-token"),
+    )
+    assert observed["hello"].tenant_id == "tenant-1"
+    assert observed["hello"].processing_profile_digest == "a" * 64
+    assert observed["closed"] is True

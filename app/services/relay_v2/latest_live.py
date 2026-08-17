@@ -37,6 +37,7 @@ class LiveFrameMember:
     image_size: int
     content_digest: str
     file_path: str
+    authorized_camera_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,16 @@ class ClaimedFrameSet:
     profile_digest: str | None = None
     authorized_subject: str | None = None
     session_token_jti: str | None = None
+
+    @property
+    def authorized_camera_ids(self) -> tuple[str, ...]:
+        return tuple(
+            sorted(
+                member.authorized_camera_id
+                for member in self.members
+                if member.authorized_camera_id
+            )
+        )
 
 
 class LatestLiveStore:
@@ -507,6 +518,7 @@ class LatestLiveStore:
                     image_size=member.image_size,
                     content_digest=member.content_digest,
                     file_path=member.file_path,
+                    authorized_camera_id=member.authorized_camera_id,
                 )
                 for member in members
             ),

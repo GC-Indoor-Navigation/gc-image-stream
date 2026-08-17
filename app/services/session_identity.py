@@ -55,6 +55,83 @@ class AuthorizedSessionScope:
         )
 
 
+@dataclass(frozen=True)
+class ActiveSessionCredential:
+    token: str
+    scope: AuthorizedSessionScope
+
+
+class ActiveSessionCredentialStore:
+    def __init__(self, *, now: Callable[[], float] = time.time):
+        self.now = now
+        self._credentials: dict[str, ActiveSessionCredential] = {}
+        self._lock = RLock()
+
+    def register(
+        self,
+        token: str,
+        scope: AuthorizedSessionScope,
+    ) -> ActiveSessionCredential:
+        if not token:
+            raise SessionTokenError("session token is required")
+        if scope.expires_at <= int(self.now()):
+            raise SessionTokenError("session token is expired")
+        credential = ActiveSessionCredential(token=token, scope=scope)
+        with self._lock:
+            existing = self._credentials.get(scope.processing_job_id)
+            if existing is not None and existing.scope != scope:
+                raise SessionTokenError(
+                    "processing job credential scope cannot be replaced"
+                )
+            self._credentials[scope.processing_job_id] = credential
+        return credential
+
+    def resolve_for_claim(self, claim) -> ActiveSessionCredential:
+        processing_job_id = claim.processing_job_id
+        if not processing_job_id:
+            raise SessionTokenError("authorized manifest is missing processing_job_id")
+        with self._lock:
+            credential = self._credentials.get(processing_job_id)
+            if credential is None:
+                raise SessionTokenError("active session credential is unavailable")
+            if credential.scope.expires_at <= int(self.now()):
+                self._credentials.pop(processing_job_id, None)
+                raise SessionTokenError("active session credential is expired")
+            expected = (
+                claim.tenant_id,
+                claim.site_id,
+                claim.capture_session_id,
+                claim.processing_job_id,
+                claim.profile_digest,
+                claim.authorized_subject,
+                claim.session_token_jti,
+                frozenset(claim.authorized_camera_ids),
+            )
+            actual = (
+                credential.scope.tenant_id,
+                credential.scope.site_id,
+                credential.scope.capture_session_id,
+                credential.scope.processing_job_id,
+                credential.scope.profile_digest,
+                credential.scope.authorized_subject,
+                credential.scope.token_jti,
+                credential.scope.camera_ids,
+            )
+            if actual != expected:
+                raise SessionTokenError(
+                    "active credential does not match authorized manifest"
+                )
+            return credential
+
+    def revoke(self, processing_job_id: str) -> bool:
+        with self._lock:
+            return self._credentials.pop(processing_job_id, None) is not None
+
+    def clear(self) -> None:
+        with self._lock:
+            self._credentials.clear()
+
+
 class JwksKeyCache:
     def __init__(
         self,
@@ -235,3 +312,6 @@ def _canonical_uuid(value, claim_name: str) -> str:
     if normalized != value.lower():
         raise SessionTokenError(f"{claim_name} must use canonical UUID form")
     return normalized
+
+
+active_session_credentials = ActiveSessionCredentialStore()

@@ -1,6 +1,7 @@
 import base64
 import time
 from collections import namedtuple
+from types import SimpleNamespace
 from uuid import uuid4
 
 import jwt
@@ -8,6 +9,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app.services.session_identity import (
+    ActiveSessionCredentialStore,
     JwksKeyCache,
     SessionTokenError,
     SessionTokenVerifier,
@@ -135,6 +137,46 @@ def test_extract_bearer_token_requires_exactly_one_bearer_value():
         extract_bearer_token(Context([Metadata("authorization", "Basic value")]))
 
 
+def test_active_credential_is_memory_only_expiring_and_manifest_bound():
+    now = [1_000]
+    store = ActiveSessionCredentialStore(now=lambda: now[0])
+    scope = _scope(expires_at=1_100)
+    store.register("signed-token", scope)
+    claim = SimpleNamespace(
+        tenant_id=scope.tenant_id,
+        site_id=scope.site_id,
+        capture_session_id=scope.capture_session_id,
+        processing_job_id=scope.processing_job_id,
+        profile_digest=scope.profile_digest,
+        authorized_subject=scope.authorized_subject,
+        session_token_jti=scope.token_jti,
+        authorized_camera_ids=tuple(scope.camera_ids),
+    )
+
+    assert store.resolve_for_claim(claim).token == "signed-token"
+
+    claim.tenant_id = str(uuid4())
+    with pytest.raises(SessionTokenError, match="does not match"):
+        store.resolve_for_claim(claim)
+
+    claim.tenant_id = scope.tenant_id
+    now[0] = 1_100
+    with pytest.raises(SessionTokenError, match="expired"):
+        store.resolve_for_claim(claim)
+
+
+def test_active_credential_scope_cannot_be_replaced_for_same_job():
+    store = ActiveSessionCredentialStore(now=lambda: 1_000)
+    scope = _scope(expires_at=1_100)
+    store.register("first-token", scope)
+
+    with pytest.raises(SessionTokenError, match="cannot be replaced"):
+        store.register(
+            "substituted-token",
+            _scope(expires_at=1_100, tenant_id=str(uuid4())),
+        )
+
+
 def _verifier(fetcher):
     return SessionTokenVerifier(
         issuer=ISSUER,
@@ -172,6 +214,22 @@ def _claims():
         "exp": now + 300,
         "jti": PROCESSING_JOB_ID,
     }
+
+
+def _scope(*, expires_at, tenant_id=TENANT_ID):
+    from app.services.session_identity import AuthorizedSessionScope
+
+    return AuthorizedSessionScope(
+        tenant_id=tenant_id,
+        site_id=SITE_ID,
+        capture_session_id=CAPTURE_SESSION_ID,
+        processing_job_id=PROCESSING_JOB_ID,
+        camera_ids=frozenset({CAMERA_ID}),
+        profile_digest=PROFILE_DIGEST,
+        authorized_subject="user-123",
+        token_jti=PROCESSING_JOB_ID,
+        expires_at=expires_at,
+    )
 
 
 def _b64uint(value: int) -> str:

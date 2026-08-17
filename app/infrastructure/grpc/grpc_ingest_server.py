@@ -19,6 +19,8 @@ from app.services.stream.state import stream_state
 from app.services.session_identity import (
     SessionTokenError,
     SessionTokenVerifier,
+    ActiveSessionCredentialStore,
+    active_session_credentials,
     extract_bearer_token,
 )
 
@@ -91,6 +93,7 @@ class GrpcIngestService:
         ingest_func: Callable[..., dict] = ingest_frame,
         state=stream_state,
         relay_service=processing_relay_service,
+        credential_store: ActiveSessionCredentialStore = active_session_credentials,
     ):
         self.bind = ""
         self.enabled = False
@@ -118,6 +121,7 @@ class GrpcIngestService:
         self.state = state
         self.relay_service = relay_service
         self.session_token_verifier: SessionTokenVerifier | None = None
+        self.credential_store = credential_store
 
     def configure(
         self,
@@ -350,9 +354,9 @@ class GrpcIngestService:
 
         if self.session_token_verifier is not None:
             try:
-                authorization_scope = self.session_token_verifier.verify(
-                    extract_bearer_token(context)
-                )
+                session_token = extract_bearer_token(context)
+                authorization_scope = self.session_token_verifier.verify(session_token)
+                self.credential_store.register(session_token, authorization_scope)
             except SessionTokenError:
                 return _abort_ingest(
                     context,
