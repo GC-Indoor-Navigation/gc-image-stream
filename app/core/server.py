@@ -29,11 +29,17 @@ STREAM_SESSION_TOKEN_AUDIENCE = get_optional_str_env(
     "STREAM_SESSION_TOKEN_AUDIENCE",
     "gc-data-plane",
 )
+STREAM_SESSION_STATUS_URL_TEMPLATE = get_optional_str_env(
+    "STREAM_SESSION_STATUS_URL_TEMPLATE"
+)
 if STREAM_SESSION_AUTH_ENABLED and not (
-    STREAM_SESSION_JWKS_URL and STREAM_SESSION_TOKEN_ISSUER
+    STREAM_SESSION_JWKS_URL
+    and STREAM_SESSION_TOKEN_ISSUER
+    and STREAM_SESSION_STATUS_URL_TEMPLATE
 ):
     raise RuntimeError(
-        "STREAM_SESSION_JWKS_URL and STREAM_SESSION_TOKEN_ISSUER are required "
+        "STREAM_SESSION_JWKS_URL, STREAM_SESSION_TOKEN_ISSUER, and "
+        "STREAM_SESSION_STATUS_URL_TEMPLATE are required "
         "when session authentication is enabled"
     )
 _legacy_stream_relay_enabled = get_optional_bool_env("STREAM_RELAY_ENABLED", False)

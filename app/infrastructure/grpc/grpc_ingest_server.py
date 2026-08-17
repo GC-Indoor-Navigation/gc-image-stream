@@ -366,6 +366,17 @@ class GrpcIngestService:
 
         try:
             for request in request_iterator:
+                if authorization_scope is not None:
+                    try:
+                        self.session_token_verifier.assert_active(
+                            authorization_scope
+                        )
+                    except SessionTokenError:
+                        return _abort_ingest(
+                            context,
+                            "UNAUTHENTICATED",
+                            "Main session is no longer active",
+                        )
                 received_at_ms = int(time.time() * 1000)
                 received_monotonic_ns = time.monotonic_ns()
                 server_receive_sequence = self._next_server_receive_sequence()

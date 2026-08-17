@@ -132,6 +132,56 @@ class ActiveSessionCredentialStore:
             self._credentials.clear()
 
 
+class SessionStatusCache:
+    def __init__(
+        self,
+        url_template: str,
+        *,
+        cache_ttl_sec: float = 1.0,
+        timeout_sec: float = 1.0,
+        fetcher: Callable[[str], Mapping] | None = None,
+        monotonic: Callable[[], float] = time.monotonic,
+    ):
+        if "{processing_job_id}" not in url_template:
+            raise ValueError("session status URL must contain {processing_job_id}")
+        if cache_ttl_sec <= 0 or timeout_sec <= 0:
+            raise ValueError("session status cache and timeout must be positive")
+        self.url_template = url_template
+        self.cache_ttl_sec = cache_ttl_sec
+        self.timeout_sec = timeout_sec
+        self.fetcher = fetcher or self._fetch
+        self.monotonic = monotonic
+        self._active_until: dict[str, float] = {}
+        self._lock = RLock()
+
+    def assert_active(self, processing_job_id: str) -> None:
+        with self._lock:
+            now = self.monotonic()
+            if self._active_until.get(processing_job_id, float("-inf")) > now:
+                return
+            try:
+                payload = self.fetcher(processing_job_id)
+            except Exception as exc:
+                raise SessionTokenError("could not verify Main session status") from exc
+            if (
+                not isinstance(payload, Mapping)
+                or payload.get("processingJobId") != processing_job_id
+                or payload.get("known") is not True
+                or payload.get("active") is not True
+            ):
+                self._active_until.pop(processing_job_id, None)
+                raise SessionTokenError("Main session is inactive or unknown")
+            self._active_until[processing_job_id] = now + self.cache_ttl_sec
+
+    def _fetch(self, processing_job_id: str) -> Mapping:
+        response = httpx.get(
+            self.url_template.format(processing_job_id=processing_job_id),
+            timeout=self.timeout_sec,
+        )
+        response.raise_for_status()
+        return response.json()
+
+
 class JwksKeyCache:
     def __init__(
         self,
@@ -211,6 +261,8 @@ class SessionTokenVerifier:
         audience: str,
         key_cache: JwksKeyCache,
         leeway_sec: int = 5,
+        status_cache: SessionStatusCache | None = None,
+        now: Callable[[], float] = time.time,
     ):
         if not issuer or not audience:
             raise ValueError("issuer and audience are required")
@@ -220,6 +272,8 @@ class SessionTokenVerifier:
         self.audience = audience
         self.key_cache = key_cache
         self.leeway_sec = leeway_sec
+        self.status_cache = status_cache
+        self.now = now
 
     def verify(self, token: str) -> AuthorizedSessionScope:
         if not token:
@@ -238,11 +292,19 @@ class SessionTokenVerifier:
                 leeway=self.leeway_sec,
                 options={"require": list(REQUIRED_CLAIMS)},
             )
-            return _scope_from_claims(claims)
+            scope = _scope_from_claims(claims)
+            self.assert_active(scope)
+            return scope
         except SessionTokenError:
             raise
         except jwt.PyJWTError as exc:
             raise SessionTokenError("session token validation failed") from exc
+
+    def assert_active(self, scope: AuthorizedSessionScope) -> None:
+        if scope.expires_at <= int(self.now()):
+            raise SessionTokenError("session token is expired")
+        if self.status_cache is not None:
+            self.status_cache.assert_active(scope.processing_job_id)
 
 
 def extract_bearer_token(context) -> str:

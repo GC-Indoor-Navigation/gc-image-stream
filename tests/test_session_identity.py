@@ -13,6 +13,7 @@ from app.services.session_identity import (
     JwksKeyCache,
     SessionTokenError,
     SessionTokenVerifier,
+    SessionStatusCache,
     extract_bearer_token,
 )
 
@@ -175,6 +176,60 @@ def test_active_credential_scope_cannot_be_replaced_for_same_job():
             "substituted-token",
             _scope(expires_at=1_100, tenant_id=str(uuid4())),
         )
+
+
+def test_session_status_cache_propagates_revocation_fail_closed():
+    now = [10.0]
+    active = [True]
+    calls = 0
+
+    def fetcher(processing_job_id):
+        nonlocal calls
+        calls += 1
+        return {
+            "processingJobId": processing_job_id,
+            "known": True,
+            "active": active[0],
+        }
+
+    cache = SessionStatusCache(
+        "https://main/session-status/{processing_job_id}",
+        cache_ttl_sec=1.0,
+        fetcher=fetcher,
+        monotonic=lambda: now[0],
+    )
+
+    cache.assert_active(PROCESSING_JOB_ID)
+    active[0] = False
+    cache.assert_active(PROCESSING_JOB_ID)
+    assert calls == 1
+
+    now[0] = 11.0
+    with pytest.raises(SessionTokenError, match="inactive"):
+        cache.assert_active(PROCESSING_JOB_ID)
+    assert calls == 2
+
+
+def test_session_status_cache_rejects_unknown_or_unavailable_main():
+    unknown = SessionStatusCache(
+        "https://main/session-status/{processing_job_id}",
+        fetcher=lambda processing_job_id: {
+            "processingJobId": processing_job_id,
+            "known": False,
+            "active": False,
+        },
+    )
+    unavailable = SessionStatusCache(
+        "https://main/session-status/{processing_job_id}",
+        fetcher=lambda processing_job_id: (_ for _ in ()).throw(
+            RuntimeError("offline")
+        ),
+    )
+
+    with pytest.raises(SessionTokenError, match="inactive"):
+        unknown.assert_active(PROCESSING_JOB_ID)
+    with pytest.raises(SessionTokenError, match="could not verify"):
+        unavailable.assert_active(PROCESSING_JOB_ID)
 
 
 def _verifier(fetcher):

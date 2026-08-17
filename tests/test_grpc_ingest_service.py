@@ -850,6 +850,9 @@ class _FakeVerifier:
         assert token == "signed-token"
         return self.scope
 
+    def assert_active(self, scope):
+        assert scope == self.scope
+
 
 class _Aborted(RuntimeError):
     def __init__(self, code, detail):

@@ -31,6 +31,7 @@ from app.core.server import (
     STREAM_SESSION_JWKS_URL,
     STREAM_SESSION_TOKEN_AUDIENCE,
     STREAM_SESSION_TOKEN_ISSUER,
+    STREAM_SESSION_STATUS_URL_TEMPLATE,
 )
 from app.services.ingest.adapters.adapter_runtime import CameraInputConfig
 from app.infrastructure.grpc.grpc_ingest_server import grpc_ingest_service
@@ -50,7 +51,11 @@ from app.services.stream.stream_experiment import (
     configure_stream_experiment_recorder,
 )
 from app.services.sync import stream_sync_service
-from app.services.session_identity import JwksKeyCache, SessionTokenVerifier
+from app.services.session_identity import (
+    JwksKeyCache,
+    SessionStatusCache,
+    SessionTokenVerifier,
+)
 
 
 logger = logging.getLogger("gc_image_stream.app")
@@ -233,6 +238,9 @@ async def startup_application():
                 issuer=STREAM_SESSION_TOKEN_ISSUER,
                 audience=STREAM_SESSION_TOKEN_AUDIENCE,
                 key_cache=JwksKeyCache(STREAM_SESSION_JWKS_URL),
+                status_cache=SessionStatusCache(
+                    STREAM_SESSION_STATUS_URL_TEMPLATE
+                ),
             )
             if STREAM_SESSION_AUTH_ENABLED
             else None
