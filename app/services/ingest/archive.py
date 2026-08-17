@@ -40,6 +40,14 @@ def persist_frame_archive(
     received_at_ms: int | None = None,
     capture_config_digest: str | None = None,
     capture_metadata_json: str | None = None,
+    tenant_id: str | None = None,
+    site_id: str | None = None,
+    capture_session_id: str | None = None,
+    processing_job_id: str | None = None,
+    profile_digest: str | None = None,
+    authorized_subject: str | None = None,
+    session_token_jti: str | None = None,
+    authorized_camera_id: str | None = None,
     initial_error: str | None = None,
     writer: ArchiveWriter | None = None,
 ) -> FrameArchiveOutcome:
@@ -73,6 +81,14 @@ def persist_frame_archive(
             received_at_ms=received_at_ms,
             capture_config_digest=capture_config_digest,
             capture_metadata_json=capture_metadata_json,
+            tenant_id=tenant_id,
+            site_id=site_id,
+            capture_session_id=capture_session_id,
+            processing_job_id=processing_job_id,
+            profile_digest=profile_digest,
+            authorized_subject=authorized_subject,
+            session_token_jti=session_token_jti,
+            authorized_camera_id=authorized_camera_id,
         )
     except Exception as exc:
         db.rollback()

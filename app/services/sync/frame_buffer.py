@@ -120,6 +120,14 @@ class SyncFrameBufferManager:
             received_at_ms=frame.received_at_ms,
             capture_config_digest=frame.capture_config_digest,
             capture_metadata_json=frame.capture_metadata_json,
+            tenant_id=frame.tenant_id,
+            site_id=frame.site_id,
+            capture_session_id=frame.capture_session_id,
+            processing_job_id=frame.processing_job_id,
+            profile_digest=frame.profile_digest,
+            authorized_subject=frame.authorized_subject,
+            session_token_jti=frame.session_token_jti,
+            authorized_camera_id=frame.authorized_camera_id,
         )
 
         with self._lock:

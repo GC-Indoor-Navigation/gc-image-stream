@@ -101,6 +101,10 @@ def ingest_frame(
         frame_sequence=sequence,
         content_digest=content_digest,
     )
+    scope_fields = _authorization_scope_fields(
+        authorization_scope,
+        authorized_camera_id=camera_stream_id,
+    )
     memory_frame = SyncInputFrame(
         frame_id=None,
         device_id=device_id,
@@ -118,6 +122,7 @@ def ingest_frame(
         received_at_ms=resolved_received_at_ms,
         capture_config_digest=capture_config_digest,
         capture_metadata_json=capture_metadata_json,
+        **scope_fields,
     )
 
     selected_relay_mode = resolve_ingest_relay_mode(
@@ -163,6 +168,7 @@ def ingest_frame(
         received_at_ms=resolved_received_at_ms,
         capture_config_digest=capture_config_digest,
         capture_metadata_json=capture_metadata_json,
+        **scope_fields,
         initial_error=path_error,
         writer=archive_writer,
     )
@@ -285,6 +291,21 @@ def ingest_frame(
         "synchronized_frame_set": synchronized_frame_set,
         "manifest_persisted": manifest_persisted,
         "frame_set_relay_enqueued": frame_set_relay_enqueued,
+    }
+
+
+def _authorization_scope_fields(scope, *, authorized_camera_id: str | None) -> dict:
+    if scope is None:
+        return {}
+    return {
+        "tenant_id": scope.tenant_id,
+        "site_id": scope.site_id,
+        "capture_session_id": scope.capture_session_id,
+        "processing_job_id": scope.processing_job_id,
+        "profile_digest": scope.profile_digest,
+        "authorized_subject": scope.authorized_subject,
+        "session_token_jti": scope.token_jti,
+        "authorized_camera_id": authorized_camera_id,
     }
 
 

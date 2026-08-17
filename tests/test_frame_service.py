@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
-from app.services.frames.service import create_frame, get_frames
+from app.services.frames.service import FrameIntegrityError, create_frame, get_frames
 
 
 def build_test_session():
@@ -59,5 +59,36 @@ def test_create_frame_rolls_back_to_existing_row_after_integrity_error(monkeypat
 
         assert duplicate.id == existing.id
         assert duplicate.file_path == existing.file_path
+    finally:
+        db.close()
+
+
+def test_duplicate_source_identity_rejects_authorization_scope_change():
+    db = build_test_session()
+    common = {
+        "source_session_id": "source-1",
+        "camera_stream_id": "device-1/camera-1",
+        "frame_sequence": 1,
+        "content_digest": "digest-1",
+        "tenant_id": "tenant-1",
+        "site_id": "site-1",
+        "capture_session_id": "capture-1",
+        "processing_job_id": "job-1",
+        "profile_digest": "profile-1",
+        "authorized_subject": "user-1",
+        "session_token_jti": "job-1",
+        "authorized_camera_id": "camera-1",
+    }
+    try:
+        create_frame(db, "device-1", 1000, "first.jpg", **common)
+
+        with pytest.raises(FrameIntegrityError, match="authorization scope"):
+            create_frame(
+                db,
+                "device-1",
+                1000,
+                "second.jpg",
+                **{**common, "tenant_id": "tenant-2"},
+            )
     finally:
         db.close()

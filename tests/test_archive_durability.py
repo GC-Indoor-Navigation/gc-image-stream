@@ -3,7 +3,10 @@ from pathlib import Path
 from sqlalchemy import create_engine, inspect
 
 import app.services.ingest.archive as archive_module
-from app.db.migrations import migrate_manifest_archive_schema
+from app.db.migrations import (
+    migrate_authorization_scope_schema,
+    migrate_manifest_archive_schema,
+)
 from app.infrastructure.grpc.processing_relay_client import (
     ProcessingFrameSetRelayService,
     ProcessingRelayService,
@@ -168,4 +171,48 @@ def test_manifest_archive_columns_migrate_additively(tmp_path):
         "member_count",
     } <= columns
     assert state == "ARCHIVE_DURABLE"
+    engine.dispose()
+
+
+def test_authorization_scope_columns_migrate_additively(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'authorization.db'}")
+    with engine.begin() as connection:
+        connection.exec_driver_sql("CREATE TABLE frames (id INTEGER PRIMARY KEY)")
+        connection.exec_driver_sql(
+            "CREATE TABLE frame_set_manifests (frame_set_uid VARCHAR PRIMARY KEY)"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE frame_set_members (id INTEGER PRIMARY KEY)"
+        )
+
+    assert migrate_authorization_scope_schema(engine) is True
+    assert migrate_authorization_scope_schema(engine) is False
+
+    assert {
+        "tenant_id",
+        "site_id",
+        "capture_session_id",
+        "processing_job_id",
+        "profile_digest",
+        "authorized_subject",
+        "session_token_jti",
+        "authorized_camera_id",
+    } <= {
+        column["name"] for column in inspect(engine).get_columns("frames")
+    }
+    assert {
+        "tenant_id",
+        "site_id",
+        "processing_job_id",
+        "profile_digest",
+        "authorized_subject",
+        "session_token_jti",
+    } <= {
+        column["name"]
+        for column in inspect(engine).get_columns("frame_set_manifests")
+    }
+    assert "authorized_camera_id" in {
+        column["name"]
+        for column in inspect(engine).get_columns("frame_set_members")
+    }
     engine.dispose()

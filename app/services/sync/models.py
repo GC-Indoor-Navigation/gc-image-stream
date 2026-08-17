@@ -20,6 +20,14 @@ class SyncInputFrame:
     received_at_ms: int | None = None
     capture_config_digest: str | None = None
     capture_metadata_json: str | None = None
+    tenant_id: str | None = None
+    site_id: str | None = None
+    capture_session_id: str | None = None
+    processing_job_id: str | None = None
+    profile_digest: str | None = None
+    authorized_subject: str | None = None
+    session_token_jti: str | None = None
+    authorized_camera_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -43,6 +51,14 @@ class StoredSyncFrame:
     received_at_ms: int | None = None
     capture_config_digest: str | None = None
     capture_metadata_json: str | None = None
+    tenant_id: str | None = None
+    site_id: str | None = None
+    capture_session_id: str | None = None
+    processing_job_id: str | None = None
+    profile_digest: str | None = None
+    authorized_subject: str | None = None
+    session_token_jti: str | None = None
+    authorized_camera_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -63,3 +79,9 @@ class SynchronizedFrameSet:
     sync_window_ms: int = 0
     synchronized_at_ms: int = 0
     member_count: int = 0
+    tenant_id: str | None = None
+    site_id: str | None = None
+    processing_job_id: str | None = None
+    profile_digest: str | None = None
+    authorized_subject: str | None = None
+    session_token_jti: str | None = None

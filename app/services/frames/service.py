@@ -31,6 +31,14 @@ def create_frame(
     received_at_ms: int | None = None,
     capture_config_digest: str | None = None,
     capture_metadata_json: str | None = None,
+    tenant_id: str | None = None,
+    site_id: str | None = None,
+    capture_session_id: str | None = None,
+    processing_job_id: str | None = None,
+    profile_digest: str | None = None,
+    authorized_subject: str | None = None,
+    session_token_jti: str | None = None,
+    authorized_camera_id: str | None = None,
 ) -> Frame:
     source_frame_uid, identity_mode = resolve_frame_identity(
         source_session_id=source_session_id,
@@ -48,6 +56,17 @@ def create_frame(
     )
     if existing is not None:
         _verify_duplicate_digest(existing, content_digest)
+        _verify_duplicate_scope(
+            existing,
+            tenant_id=tenant_id,
+            site_id=site_id,
+            capture_session_id=capture_session_id,
+            processing_job_id=processing_job_id,
+            profile_digest=profile_digest,
+            authorized_subject=authorized_subject,
+            session_token_jti=session_token_jti,
+            authorized_camera_id=authorized_camera_id,
+        )
         _apply_archive_recovery(
             db,
             existing,
@@ -75,6 +94,14 @@ def create_frame(
         received_at_ms=received_at_ms,
         capture_config_digest=capture_config_digest,
         capture_metadata_json=capture_metadata_json,
+        tenant_id=tenant_id,
+        site_id=site_id,
+        capture_session_id=capture_session_id,
+        processing_job_id=processing_job_id,
+        profile_digest=profile_digest,
+        authorized_subject=authorized_subject,
+        session_token_jti=session_token_jti,
+        authorized_camera_id=authorized_camera_id,
     )
     db.add(frame)
     try:
@@ -92,6 +119,17 @@ def create_frame(
         )
         if existing is not None:
             _verify_duplicate_digest(existing, content_digest)
+            _verify_duplicate_scope(
+                existing,
+                tenant_id=tenant_id,
+                site_id=site_id,
+                capture_session_id=capture_session_id,
+                processing_job_id=processing_job_id,
+                profile_digest=profile_digest,
+                authorized_subject=authorized_subject,
+                session_token_jti=session_token_jti,
+                authorized_camera_id=authorized_camera_id,
+            )
             _apply_archive_recovery(
                 db,
                 existing,
@@ -163,6 +201,17 @@ def _verify_duplicate_digest(frame: Frame, content_digest: str | None) -> None:
     ):
         raise FrameIntegrityError(
             "source_frame_uid was reused with a different content digest"
+        )
+
+
+def _verify_duplicate_scope(frame: Frame, **declared_scope) -> None:
+    existing_scope = {
+        name: getattr(frame, name)
+        for name in declared_scope
+    }
+    if existing_scope != declared_scope:
+        raise FrameIntegrityError(
+            "source_frame_uid was reused with a different authorization scope"
         )
 
 

@@ -7,6 +7,7 @@ from app.db.migrations import (
     migrate_frame_identity_schema,
     migrate_manifest_archive_schema,
     migrate_relay_v2_client_state_schema,
+    migrate_authorization_scope_schema,
 )
 
 
@@ -28,6 +29,7 @@ def ensure_database_schema(bind=engine):
     migrate_frame_identity_schema(bind)
     migrate_manifest_archive_schema(bind)
     migrate_relay_v2_client_state_schema(bind)
+    migrate_authorization_scope_schema(bind)
     close_open_capture_runs_after_restart(bind)
 
 

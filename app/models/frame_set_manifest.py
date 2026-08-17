@@ -79,6 +79,12 @@ class FrameSetManifest(Base):
         server_default="0",
     )
     member_count = Column(Integer, nullable=False, default=0, server_default="0")
+    tenant_id = Column(String, nullable=True, index=True)
+    site_id = Column(String, nullable=True, index=True)
+    processing_job_id = Column(String, nullable=True, index=True)
+    profile_digest = Column(String, nullable=True)
+    authorized_subject = Column(String, nullable=True)
+    session_token_jti = Column(String, nullable=True)
 
 
 class FrameSetMember(Base):
@@ -109,6 +115,7 @@ class FrameSetMember(Base):
     image_size = Column(BigInteger, nullable=False)
     content_digest = Column(String, nullable=False)
     file_path = Column(String, nullable=False)
+    authorized_camera_id = Column(String, nullable=True)
 
 
 class ArchiveReconciliationIssue(Base):

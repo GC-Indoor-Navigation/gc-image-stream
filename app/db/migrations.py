@@ -235,6 +235,58 @@ def migrate_relay_v2_client_state_schema(engine: Engine) -> bool:
     return True
 
 
+def migrate_authorization_scope_schema(engine: Engine) -> bool:
+    inspector = inspect(engine)
+    table_columns = {
+        "frames": {
+            "tenant_id": "VARCHAR",
+            "site_id": "VARCHAR",
+            "capture_session_id": "VARCHAR",
+            "processing_job_id": "VARCHAR",
+            "profile_digest": "VARCHAR",
+            "authorized_subject": "VARCHAR",
+            "session_token_jti": "VARCHAR",
+            "authorized_camera_id": "VARCHAR",
+        },
+        "frame_set_manifests": {
+            "tenant_id": "VARCHAR",
+            "site_id": "VARCHAR",
+            "processing_job_id": "VARCHAR",
+            "profile_digest": "VARCHAR",
+            "authorized_subject": "VARCHAR",
+            "session_token_jti": "VARCHAR",
+        },
+        "frame_set_members": {
+            "authorized_camera_id": "VARCHAR",
+        },
+    }
+    changed = False
+    with engine.begin() as connection:
+        for table_name, required in table_columns.items():
+            if table_name not in inspector.get_table_names():
+                continue
+            existing = {
+                column["name"] for column in inspector.get_columns(table_name)
+            }
+            for name in sorted(set(required) - existing):
+                connection.exec_driver_sql(
+                    f"ALTER TABLE {table_name} ADD COLUMN {name} {required[name]}"
+                )
+                changed = True
+        if "frames" in inspector.get_table_names():
+            for name in ("tenant_id", "site_id", "capture_session_id", "processing_job_id"):
+                connection.exec_driver_sql(
+                    f"CREATE INDEX IF NOT EXISTS ix_frames_{name} ON frames ({name})"
+                )
+        if "frame_set_manifests" in inspector.get_table_names():
+            for name in ("tenant_id", "site_id", "processing_job_id"):
+                connection.exec_driver_sql(
+                    "CREATE INDEX IF NOT EXISTS "
+                    f"ix_frame_set_manifests_{name} ON frame_set_manifests ({name})"
+                )
+    return changed
+
+
 def close_open_capture_runs_after_restart(engine: Engine) -> int:
     inspector = inspect(engine)
     if "capture_runs" not in inspector.get_table_names():
