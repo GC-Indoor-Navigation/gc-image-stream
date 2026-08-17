@@ -143,6 +143,10 @@ message ProducerHello {
   optional FrameSetKey last_offered_watermark = 12;
   repeated FrameSetKey unresolved_frame_sets = 13;
   optional string reconciliation_resume_token = 14;
+  string tenant_id = 15;
+  string site_id = 16;
+  string authorized_subject = 17;
+  string session_token_jti = 18;
 }
 
 message HelloAccepted {
@@ -232,6 +236,10 @@ message CreditedFrameSet {
   int64 alert_deadline_utc_ms = 19;
   uint64 reserved_delivery_bound_ms = 20;
   string processing_profile_digest = 21;
+  string tenant_id = 22;
+  string site_id = 23;
+  string authorized_subject = 24;
+  string session_token_jti = 25;
 }
 
 message FrameStatusEvent {

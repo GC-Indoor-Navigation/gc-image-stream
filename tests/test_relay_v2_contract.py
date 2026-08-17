@@ -102,6 +102,13 @@ def test_canonical_descriptor_and_binary_fixture_match_generated_client():
     assert live_frame_relay_v2_pb2.ProducerEnvelope.FromString(
         fixture
     ).hello.capture_run_id == "fixture-capture-run"
+    fixture_hello = live_frame_relay_v2_pb2.ProducerEnvelope.FromString(
+        fixture
+    ).hello
+    assert fixture_hello.tenant_id == "fixture-tenant"
+    assert fixture_hello.site_id == "fixture-site"
+    assert fixture_hello.authorized_subject == "fixture-user"
+    assert fixture_hello.session_token_jti == "fixture-processing-job"
 
 
 def test_unknown_fields_and_negotiated_payload_limit_are_safe():

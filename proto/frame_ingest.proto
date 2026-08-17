@@ -12,6 +12,15 @@ service FrameIngestService {
 message FramePacket {
   FrameMetadata metadata = 1;
   bytes jpeg = 2;
+  SessionScope session_scope = 3;
+}
+
+message SessionScope {
+  string tenant_id = 1;
+  string site_id = 2;
+  string capture_session_id = 3;
+  string processing_job_id = 4;
+  string profile_digest = 5;
 }
 
 message FrameMetadata {

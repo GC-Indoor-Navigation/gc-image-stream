@@ -57,6 +57,13 @@ def test_frame_packet_round_trip_preserves_metadata_and_bytes():
             session_id="android_01_2026-05-17T14-32-10",
         ),
         jpeg=b"\xff\xd8frame\xff\xd9",
+        session_scope=frame_ingest_pb2.SessionScope(
+            tenant_id="tenant-1",
+            site_id="site-1",
+            capture_session_id="capture-1",
+            processing_job_id="job-1",
+            profile_digest="profile-1",
+        ),
     )
 
     restored = deserialize_frame_packet(serialize_frame_packet(frame))
@@ -70,6 +77,14 @@ def test_collector_proto_field_numbers_match_android_contract():
 
     assert packet_fields["metadata"].number == 1
     assert packet_fields["jpeg"].number == 2
+    assert packet_fields["session_scope"].number == 3
+
+    scope_fields = frame_ingest_pb2.SessionScope.DESCRIPTOR.fields_by_name
+    assert scope_fields["tenant_id"].number == 1
+    assert scope_fields["site_id"].number == 2
+    assert scope_fields["capture_session_id"].number == 3
+    assert scope_fields["processing_job_id"].number == 4
+    assert scope_fields["profile_digest"].number == 5
 
     assert metadata_fields["camera_id"].number == 1
     assert metadata_fields["device_id"].number == 2
