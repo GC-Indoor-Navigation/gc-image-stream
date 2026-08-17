@@ -65,10 +65,7 @@ STREAM_RELAY_V2_SHADOW_ENABLED = get_optional_bool_env(
     "STREAM_RELAY_V2_SHADOW_ENABLED",
     False,
 )
-STREAM_RELAY_V2_TARGET = get_optional_str_env(
-    "STREAM_RELAY_V2_TARGET",
-    STREAM_RELAY_TARGET,
-)
+STREAM_RELAY_V2_TARGET = get_optional_str_env("STREAM_RELAY_V2_TARGET")
 STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST = get_optional_str_env(
     "STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST"
 )
@@ -92,6 +89,14 @@ if STREAM_RELAY_V2_SHADOW_ENABLED:
     if not STREAM_RELAY_V2_TARGET:
         raise RuntimeError(
             "STREAM_RELAY_V2_TARGET is required when v2 shadow is enabled"
+        )
+    if (
+        STREAM_RELAY_MODE != STREAM_RELAY_MODE_OFF
+        and STREAM_RELAY_V2_TARGET == STREAM_RELAY_TARGET
+    ):
+        raise RuntimeError(
+            "STREAM_RELAY_V2_TARGET must differ from STREAM_RELAY_TARGET "
+            "when legacy and v2 relays are both enabled"
         )
     if not STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST:
         raise RuntimeError(

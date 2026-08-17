@@ -26,7 +26,7 @@ PROCESSING_SERVER = r"""
 import sys
 import time
 
-from app.infrastructure.grpc_receiver import create_grpc_server
+from app.infrastructure.grpc_relay_v2_receiver import create_relay_v2_grpc_server
 from app.infrastructure.relay_v2_credit_broker import RelayV2CreditBroker
 from app.infrastructure.relay_v2_store import RelayV2WorkStore
 from app.infrastructure.relay_v2_transport import (
@@ -55,8 +55,7 @@ transport = SlowTransport(
         maximum_frame_age_ms=5000,
     ),
 )
-server = create_grpc_server(
-    frame_handler=lambda frame: None,
+server = create_relay_v2_grpc_server(
     relay_v2_servicer=transport,
 )
 server.add_insecure_port("127.0.0.1:" + sys.argv[3])

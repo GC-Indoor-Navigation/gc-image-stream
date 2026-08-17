@@ -125,13 +125,48 @@ def test_v2_shadow_requires_target_and_profile(monkeypatch):
     with pytest.raises(RuntimeError, match="V2_TARGET"):
         reload(server)
 
-    monkeypatch.setenv("STREAM_RELAY_V2_TARGET", "127.0.0.1:50051")
+    monkeypatch.setenv("STREAM_RELAY_V2_TARGET", "127.0.0.1:50053")
     with pytest.raises(RuntimeError, match="PROFILE_DIGEST"):
         reload(server)
 
     monkeypatch.setenv("STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST", "profile")
     reloaded = reload(server)
     assert reloaded.STREAM_RELAY_V2_SHADOW_ENABLED is True
+    assert reloaded.STREAM_RELAY_V2_TARGET == "127.0.0.1:50053"
+
+
+def test_v2_target_never_falls_back_to_legacy_target(monkeypatch):
+    from importlib import reload
+
+    import app.core.server as server
+
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///./frames.db")
+    monkeypatch.setenv("STORAGE_DIR", "storage")
+    monkeypatch.setenv("STREAM_RELAY_MODE", "raw")
+    monkeypatch.setenv("STREAM_RELAY_TARGET", "127.0.0.1:50051")
+    monkeypatch.setenv("STREAM_RELAY_V2_SHADOW_ENABLED", "true")
+    monkeypatch.delenv("STREAM_RELAY_V2_TARGET", raising=False)
+    monkeypatch.setenv("STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST", "profile")
+
+    with pytest.raises(RuntimeError, match="STREAM_RELAY_V2_TARGET"):
+        reload(server)
+
+
+def test_v2_and_legacy_targets_must_be_distinct(monkeypatch):
+    from importlib import reload
+
+    import app.core.server as server
+
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///./frames.db")
+    monkeypatch.setenv("STORAGE_DIR", "storage")
+    monkeypatch.setenv("STREAM_RELAY_MODE", "frame_set")
+    monkeypatch.setenv("STREAM_RELAY_TARGET", "127.0.0.1:50051")
+    monkeypatch.setenv("STREAM_RELAY_V2_SHADOW_ENABLED", "true")
+    monkeypatch.setenv("STREAM_RELAY_V2_TARGET", "127.0.0.1:50051")
+    monkeypatch.setenv("STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST", "profile")
+
+    with pytest.raises(RuntimeError, match="must differ"):
+        reload(server)
 
 
 def test_v2_alert_receiver_is_disabled_and_lazy_by_default(monkeypatch, tmp_path):

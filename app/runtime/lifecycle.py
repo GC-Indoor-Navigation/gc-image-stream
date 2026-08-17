@@ -63,6 +63,8 @@ def resolve_sync_expected_cameras(
 def resolve_selected_relay_target() -> str:
     if STREAM_RELAY_ENABLED or STREAM_FRAME_SET_RELAY_ENABLED:
         return STREAM_RELAY_TARGET
+    if STREAM_RELAY_V2_SHADOW_ENABLED:
+        return STREAM_RELAY_V2_TARGET
     return ""
 
 

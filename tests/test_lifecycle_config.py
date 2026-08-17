@@ -1,3 +1,4 @@
+from app.runtime import lifecycle
 from app.runtime.lifecycle import resolve_sync_expected_cameras
 from app.services.ingest.adapters.adapter_runtime import CameraInputConfig
 
@@ -42,3 +43,22 @@ def test_resolve_sync_expected_cameras_returns_empty_without_grpc_configs():
     )
 
     assert expected_cameras == []
+
+
+def test_selected_relay_target_uses_independent_v2_target(monkeypatch):
+    monkeypatch.setattr(lifecycle, "STREAM_RELAY_ENABLED", False)
+    monkeypatch.setattr(lifecycle, "STREAM_FRAME_SET_RELAY_ENABLED", False)
+    monkeypatch.setattr(lifecycle, "STREAM_RELAY_V2_SHADOW_ENABLED", True)
+    monkeypatch.setattr(lifecycle, "STREAM_RELAY_V2_TARGET", "processing:50053")
+
+    assert lifecycle.resolve_selected_relay_target() == "processing:50053"
+
+
+def test_selected_relay_target_keeps_legacy_owner_during_shadow(monkeypatch):
+    monkeypatch.setattr(lifecycle, "STREAM_RELAY_ENABLED", True)
+    monkeypatch.setattr(lifecycle, "STREAM_FRAME_SET_RELAY_ENABLED", False)
+    monkeypatch.setattr(lifecycle, "STREAM_RELAY_TARGET", "processing:50051")
+    monkeypatch.setattr(lifecycle, "STREAM_RELAY_V2_SHADOW_ENABLED", True)
+    monkeypatch.setattr(lifecycle, "STREAM_RELAY_V2_TARGET", "processing:50053")
+
+    assert lifecycle.resolve_selected_relay_target() == "processing:50051"

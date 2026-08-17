@@ -70,6 +70,10 @@ STREAM_RELAY_ENABLED=true
 STREAM_RELAY_TARGET=127.0.0.1:50051
 STREAM_RELAY_TIMEOUT_SEC=
 
+STREAM_RELAY_V2_SHADOW_ENABLED=false
+STREAM_RELAY_V2_TARGET=127.0.0.1:50053
+STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST=
+
 STREAM_SYNC_ENABLED=false
 STREAM_SYNC_WINDOW_MS=50
 STREAM_SYNC_EXPECTED_CAMERAS=camera1,camera2,camera3,camera4
@@ -89,6 +93,11 @@ CAMERA1_STREAM_URL=http://127.0.0.1:8080/video
 CAMERA1_COLLECT_INTERVAL_SEC=0.1
 CAMERA1_CAPTURE_TIMEOUT_SEC=10
 ```
+
+Relay v2 never falls back to `STREAM_RELAY_TARGET`. When enabled, it requires
+the explicit `STREAM_RELAY_V2_TARGET` for the Processing Server's independent
+v2 endpoint. If a legacy relay and v2 shadow run together, their targets must
+be different. Disabling v2 leaves the legacy/raw route unchanged.
 
 ### 3. Run the server
 
