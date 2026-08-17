@@ -119,6 +119,7 @@ message CaptureConfigSnapshot {
   string encoding = 7;
   string color_space = 8;
   optional string capture_intrinsic_reference = 9;
+  string authorized_camera_id = 10;
 }
 
 message ProducerClockHealth {

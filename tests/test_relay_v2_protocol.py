@@ -42,6 +42,8 @@ def _claim(tmp_path, payload=b"frame", *, authorized=False):
             }
         ]
     }
+    if authorized:
+        manifest["members"][0]["authorized_camera_id"] = "camera-1"
     authorization = (
         {
             "tenant_id": "tenant-1",
@@ -263,6 +265,7 @@ def test_authorized_manifest_drives_hello_and_frame_set_identity(tmp_path):
     assert hello.authorized_subject == claim.authorized_subject
     assert hello.session_token_jti == claim.session_token_jti
     assert hello.processing_profile_digest == claim.profile_digest
+    assert hello.capture_configs[0].authorized_camera_id == "camera-1"
     assert frame_set.tenant_id == claim.tenant_id
     assert frame_set.site_id == claim.site_id
     assert frame_set.authorized_subject == claim.authorized_subject

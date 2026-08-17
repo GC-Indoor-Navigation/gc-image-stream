@@ -109,6 +109,9 @@ def test_canonical_descriptor_and_binary_fixture_match_generated_client():
     assert fixture_hello.site_id == "fixture-site"
     assert fixture_hello.authorized_subject == "fixture-user"
     assert fixture_hello.session_token_jti == "fixture-processing-job"
+    assert fixture_hello.capture_configs[0].authorized_camera_id == (
+        "11111111-1111-1111-1111-111111111111"
+    )
 
 
 def test_unknown_fields_and_negotiated_payload_limit_are_safe():

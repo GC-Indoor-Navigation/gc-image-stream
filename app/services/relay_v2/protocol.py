@@ -359,6 +359,9 @@ def _manifest_members(
                 mirrored=bool(metadata.get("mirrored", False)),
                 encoding=str(metadata.get("encoding") or "image/jpeg"),
                 color_space=str(metadata.get("color_space") or "UNKNOWN"),
+                authorized_camera_id=str(
+                    member.get("authorized_camera_id") or ""
+                ),
             )
         )
     configs.sort(key=lambda item: item.camera_stream_id)
