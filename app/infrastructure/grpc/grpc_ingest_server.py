@@ -16,6 +16,11 @@ from app.infrastructure.grpc.processing_relay_client import processing_relay_ser
 from app.services.ingest.ingest_pipeline import ingest_frame
 from app.services.stream.stream_experiment import get_stream_experiment_recorder
 from app.services.stream.state import stream_state
+from app.services.session_identity import (
+    SessionTokenError,
+    SessionTokenVerifier,
+    extract_bearer_token,
+)
 
 FrameMetadata = frame_ingest_pb2.FrameMetadata
 FramePacket = frame_ingest_pb2.FramePacket
@@ -112,6 +117,7 @@ class GrpcIngestService:
         self.ingest_func = ingest_func
         self.state = state
         self.relay_service = relay_service
+        self.session_token_verifier: SessionTokenVerifier | None = None
 
     def configure(
         self,
@@ -119,6 +125,7 @@ class GrpcIngestService:
         enabled: bool = True,
         expected_device_count: int | None = None,
         expected_device_ids: Iterable[str] | None = None,
+        session_token_verifier: SessionTokenVerifier | None = None,
     ):
         normalized_expected_ids = {
             device_id.strip()
@@ -150,6 +157,7 @@ class GrpcIngestService:
         self.collection_started = not self._gate_enabled()
         self.collection_stopped = False
         self.collection_stop_reason = None
+        self.session_token_verifier = session_token_verifier
 
     def start(self):
         if not self.enabled:
@@ -338,6 +346,19 @@ class GrpcIngestService:
     ) -> StreamFramesResponse:
         received_count = 0
         stream_device_ids: set[str] = set()
+        authorization_scope = None
+
+        if self.session_token_verifier is not None:
+            try:
+                authorization_scope = self.session_token_verifier.verify(
+                    extract_bearer_token(context)
+                )
+            except SessionTokenError:
+                return _abort_ingest(
+                    context,
+                    "UNAUTHENTICATED",
+                    "valid Main session credentials are required",
+                )
 
         try:
             for request in request_iterator:
@@ -367,6 +388,18 @@ class GrpcIngestService:
 
                 content_type = resolve_content_type(metadata.format or "jpeg")
                 camera_id = metadata.camera_id or "unknown"
+                if authorization_scope is not None and (
+                    not request.HasField("session_scope")
+                    or not authorization_scope.matches_declared_scope(
+                        request.session_scope,
+                        camera_id=camera_id,
+                    )
+                ):
+                    return _abort_ingest(
+                        context,
+                        "PERMISSION_DENIED",
+                        "frame scope does not match Main session credentials",
+                    )
                 filename = f"{internal_device_id}_{camera_id}_{metadata.frame_sequence}.jpg"
                 session_id = metadata.session_id if metadata.HasField("session_id") else None
                 metadata_payload = MessageToDict(
@@ -400,6 +433,7 @@ class GrpcIngestService:
                         relay_service=self.relay_service,
                         received_at_ms=received_at_ms,
                         capture_metadata=metadata_payload,
+                        authorization_scope=authorization_scope,
                     )
                     ingested_at_ms = int(time.time() * 1000)
                     ingested_monotonic_ns = time.monotonic_ns()
@@ -450,3 +484,11 @@ class GrpcIngestService:
 
 
 grpc_ingest_service = GrpcIngestService()
+
+
+def _abort_ingest(context, status_name: str, detail: str):
+    if context is not None and hasattr(context, "abort"):
+        import grpc
+
+        context.abort(getattr(grpc.StatusCode, status_name), detail)
+    raise SessionTokenError(detail)

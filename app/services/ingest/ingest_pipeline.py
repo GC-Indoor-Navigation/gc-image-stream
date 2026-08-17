@@ -78,6 +78,7 @@ def ingest_frame(
     received_at_ms: int | None = None,
     archive_writer: ArchiveWriter | None = None,
     capture_metadata: dict | None = None,
+    authorization_scope=None,
 ):
     started_at = time.monotonic()
     resolved_received_at_ms = (

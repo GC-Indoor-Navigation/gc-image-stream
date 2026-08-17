@@ -27,6 +27,10 @@ from app.core.server import (
     STREAM_SYNC_EXPECTED_CAMERAS,
     STREAM_SYNC_RECENT_LIMIT,
     STREAM_SYNC_WINDOW_MS,
+    STREAM_SESSION_AUTH_ENABLED,
+    STREAM_SESSION_JWKS_URL,
+    STREAM_SESSION_TOKEN_AUDIENCE,
+    STREAM_SESSION_TOKEN_ISSUER,
 )
 from app.services.ingest.adapters.adapter_runtime import CameraInputConfig
 from app.infrastructure.grpc.grpc_ingest_server import grpc_ingest_service
@@ -46,6 +50,7 @@ from app.services.stream.stream_experiment import (
     configure_stream_experiment_recorder,
 )
 from app.services.sync import stream_sync_service
+from app.services.session_identity import JwksKeyCache, SessionTokenVerifier
 
 
 logger = logging.getLogger("gc_image_stream.app")
@@ -223,10 +228,20 @@ async def startup_application():
         logger.info(format_log_event("stream_relay_v2_shadow_disabled"))
 
     if grpc_ingest_enabled:
+        session_token_verifier = (
+            SessionTokenVerifier(
+                issuer=STREAM_SESSION_TOKEN_ISSUER,
+                audience=STREAM_SESSION_TOKEN_AUDIENCE,
+                key_cache=JwksKeyCache(STREAM_SESSION_JWKS_URL),
+            )
+            if STREAM_SESSION_AUTH_ENABLED
+            else None
+        )
         grpc_ingest_service.configure(
             bind=GRPC_INGEST_BIND,
             enabled=True,
             expected_device_ids=[config.device_id for config in grpc_camera_configs],
+            session_token_verifier=session_token_verifier,
         )
         grpc_ingest_service.start()
         logger.info(

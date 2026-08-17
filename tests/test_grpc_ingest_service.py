@@ -20,6 +20,7 @@ from app.services.stream import (
     configure_stream_experiment_recorder,
 )
 from app.services.stream.state import StreamState
+from app.services.session_identity import AuthorizedSessionScope
 
 
 def test_frame_packet_round_trip_preserves_metadata_and_bytes():
@@ -764,3 +765,141 @@ def test_grpc_ingest_service_keeps_device_active_until_all_streams_close():
     assert status["collection_stopped"] is True
     assert status["active_device_ids"] == ["android_02"]
     assert status["missing_device_ids"] == ["android_01"]
+
+
+def test_authenticated_ingest_binds_token_scope_before_storage(session_factory):
+    camera_id = "11111111-1111-1111-1111-111111111111"
+    scope = _authorized_scope(camera_id)
+    captured_calls = []
+
+    def fake_ingest(db, **kwargs):
+        captured_calls.append(kwargs)
+        return {
+            "frame": Frame(
+                id=1,
+                device_id=kwargs["device_id"],
+                timestamp=kwargs["timestamp_ms"],
+                file_path=None,
+            )
+        }
+
+    service = GrpcIngestService(db_factory=session_factory, ingest_func=fake_ingest)
+    service.configure(
+        bind="127.0.0.1:0",
+        session_token_verifier=_FakeVerifier(scope),
+    )
+    response = service._stream_frames(
+        iter([_scoped_packet(camera_id, scope)]),
+        _FakeContext("Bearer signed-token"),
+    )
+
+    assert response.received_frames == 1
+    assert len(captured_calls) == 1
+    assert captured_calls[0]["authorization_scope"] == scope
+
+
+def test_authenticated_ingest_rejects_scope_substitution_before_storage(
+    session_factory,
+):
+    camera_id = "11111111-1111-1111-1111-111111111111"
+    scope = _authorized_scope(camera_id)
+    captured_calls = []
+    service = GrpcIngestService(
+        db_factory=session_factory,
+        ingest_func=lambda db, **kwargs: captured_calls.append(kwargs),
+    )
+    service.configure(
+        bind="127.0.0.1:0",
+        session_token_verifier=_FakeVerifier(scope),
+    )
+    packet = _scoped_packet(camera_id, scope)
+    packet.session_scope.tenant_id = "99999999-9999-9999-9999-999999999999"
+
+    with pytest.raises(_Aborted) as raised:
+        service._stream_frames(
+            iter([packet]),
+            _FakeContext("Bearer signed-token"),
+        )
+
+    assert raised.value.code.name == "PERMISSION_DENIED"
+    assert captured_calls == []
+
+
+def test_authenticated_ingest_rejects_missing_credentials_before_iteration(
+    session_factory,
+):
+    camera_id = "11111111-1111-1111-1111-111111111111"
+    scope = _authorized_scope(camera_id)
+    service = GrpcIngestService(db_factory=session_factory)
+    service.configure(
+        bind="127.0.0.1:0",
+        session_token_verifier=_FakeVerifier(scope),
+    )
+
+    with pytest.raises(_Aborted) as raised:
+        service._stream_frames(iter([]), _FakeContext(None))
+
+    assert raised.value.code.name == "UNAUTHENTICATED"
+
+
+class _FakeVerifier:
+    def __init__(self, scope):
+        self.scope = scope
+
+    def verify(self, token):
+        assert token == "signed-token"
+        return self.scope
+
+
+class _Aborted(RuntimeError):
+    def __init__(self, code, detail):
+        super().__init__(detail)
+        self.code = code
+
+
+class _FakeContext:
+    def __init__(self, authorization):
+        self.authorization = authorization
+
+    def invocation_metadata(self):
+        if self.authorization is None:
+            return []
+        return [type("Metadata", (), {"key": "authorization", "value": self.authorization})()]
+
+    def abort(self, code, detail):
+        raise _Aborted(code, detail)
+
+
+def _authorized_scope(camera_id):
+    return AuthorizedSessionScope(
+        tenant_id="22222222-2222-2222-2222-222222222222",
+        site_id="33333333-3333-3333-3333-333333333333",
+        capture_session_id="44444444-4444-4444-4444-444444444444",
+        processing_job_id="55555555-5555-5555-5555-555555555555",
+        camera_ids=frozenset({camera_id}),
+        profile_digest="a" * 64,
+        authorized_subject="user-123",
+        token_jti="55555555-5555-5555-5555-555555555555",
+        expires_at=2_000_000_000,
+    )
+
+
+def _scoped_packet(camera_id, scope):
+    return FramePacket(
+        metadata=FrameMetadata(
+            camera_id=camera_id,
+            device_id="android-1",
+            frame_sequence=1,
+            device_timestamp_ms=1_000,
+            format="jpeg",
+            session_id="source-session-1",
+        ),
+        jpeg=b"frame",
+        session_scope=frame_ingest_pb2.SessionScope(
+            tenant_id=scope.tenant_id,
+            site_id=scope.site_id,
+            capture_session_id=scope.capture_session_id,
+            processing_job_id=scope.processing_job_id,
+            profile_digest=scope.profile_digest,
+        ),
+    )

@@ -19,6 +19,23 @@ from app.core.relay import (
 DATABASE_URL = get_required_env("DATABASE_URL")
 STORAGE_DIR = get_required_env("STORAGE_DIR")
 GRPC_INGEST_BIND = get_optional_str_env("GRPC_INGEST_BIND", "127.0.0.1:50052")
+STREAM_SESSION_AUTH_ENABLED = get_optional_bool_env(
+    "STREAM_SESSION_AUTH_ENABLED",
+    False,
+)
+STREAM_SESSION_JWKS_URL = get_optional_str_env("STREAM_SESSION_JWKS_URL")
+STREAM_SESSION_TOKEN_ISSUER = get_optional_str_env("STREAM_SESSION_TOKEN_ISSUER")
+STREAM_SESSION_TOKEN_AUDIENCE = get_optional_str_env(
+    "STREAM_SESSION_TOKEN_AUDIENCE",
+    "gc-data-plane",
+)
+if STREAM_SESSION_AUTH_ENABLED and not (
+    STREAM_SESSION_JWKS_URL and STREAM_SESSION_TOKEN_ISSUER
+):
+    raise RuntimeError(
+        "STREAM_SESSION_JWKS_URL and STREAM_SESSION_TOKEN_ISSUER are required "
+        "when session authentication is enabled"
+    )
 _legacy_stream_relay_enabled = get_optional_bool_env("STREAM_RELAY_ENABLED", False)
 _legacy_stream_frame_set_relay_enabled = get_optional_bool_env(
     "STREAM_FRAME_SET_RELAY_ENABLED",
