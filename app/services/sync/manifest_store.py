@@ -128,6 +128,12 @@ def persist_frame_set_manifest(
         sync_window_ms=frame_set.sync_window_ms,
         synchronized_at_ms=frame_set.synchronized_at_ms,
         member_count=frame_set.member_count,
+        tenant_id=frame_set.tenant_id,
+        site_id=frame_set.site_id,
+        processing_job_id=frame_set.processing_job_id,
+        profile_digest=frame_set.profile_digest,
+        authorized_subject=frame_set.authorized_subject,
+        session_token_jti=frame_set.session_token_jti,
     )
     db.add(manifest)
     db.add(
@@ -160,6 +166,7 @@ def persist_frame_set_manifest(
                 image_size=frame.image_size,
                 content_digest=frame.content_digest,
                 file_path=frame.file_path,
+                authorized_camera_id=frame.authorized_camera_id,
             )
             for frame in sorted(
                 frame_set.frames.values(),
@@ -280,6 +287,33 @@ def _validate_v2_frame_set(frame_set: SynchronizedFrameSet) -> None:
             raise ManifestIntegrityError(
                 "v2 manifest member is not identity-complete and archive-durable"
             )
+    authorization_values = (
+        frame_set.tenant_id,
+        frame_set.site_id,
+        frame_set.processing_job_id,
+        frame_set.profile_digest,
+        frame_set.authorized_subject,
+        frame_set.session_token_jti,
+    )
+    if any(authorization_values):
+        if not all(authorization_values):
+            raise ManifestIntegrityError(
+                "authorized v2 frame set has an incomplete session scope"
+            )
+        for frame in frame_set.frames.values():
+            if (
+                frame.tenant_id != frame_set.tenant_id
+                or frame.site_id != frame_set.site_id
+                or frame.capture_session_id != frame_set.capture_session_id
+                or frame.processing_job_id != frame_set.processing_job_id
+                or frame.profile_digest != frame_set.profile_digest
+                or frame.authorized_subject != frame_set.authorized_subject
+                or frame.session_token_jti != frame_set.session_token_jti
+                or not frame.authorized_camera_id
+            ):
+                raise ManifestIntegrityError(
+                    "manifest member authorization scope does not match frame set"
+                )
 
 
 def _verify_existing_manifest(
@@ -289,6 +323,12 @@ def _verify_existing_manifest(
     if (
         existing.manifest_digest != frame_set.manifest_digest
         or existing.manifest_json != frame_set.manifest_json
+        or existing.tenant_id != frame_set.tenant_id
+        or existing.site_id != frame_set.site_id
+        or existing.processing_job_id != frame_set.processing_job_id
+        or existing.profile_digest != frame_set.profile_digest
+        or existing.authorized_subject != frame_set.authorized_subject
+        or existing.session_token_jti != frame_set.session_token_jti
     ):
         raise ManifestIntegrityError(
             "frame_set_uid was reused with different manifest content"

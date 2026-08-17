@@ -19,6 +19,7 @@ from app.services.identity import (
 )
 from app.services.ingest.ingest_pipeline import ingest_frame
 from app.services.stream.state import StreamState
+from app.services.session_identity import AuthorizedSessionScope
 from app.services.sync import (
     StreamSyncService,
     SyncFrameBufferManager,
@@ -293,3 +294,131 @@ def test_late_archive_cannot_replace_a_newer_eligible_manifest(session_factory):
         assert older_projection.live_state == "SUPERSEDED_BEFORE_OFFER"
     finally:
         db.close()
+
+
+def test_authorized_ingest_persists_main_scope_in_frame_and_manifest(
+    session_factory,
+    storage_dir,
+):
+    db = session_factory()
+    camera_id = "11111111-1111-1111-1111-111111111111"
+    scope = _main_scope(camera_id=camera_id)
+    try:
+        result = ingest_frame(
+            db,
+            device_id="device-1",
+            timestamp_ms=1000,
+            image_bytes=b"authorized-frame",
+            sequence=1,
+            session_id="source-session-1",
+            camera_stream_id=camera_id,
+            capture_metadata={"width": 1920, "height": 1080},
+            authorization_scope=scope,
+            state=StreamState(),
+            relay_service=ProcessingRelayService(),
+            frame_set_relay_service=ProcessingFrameSetRelayService(),
+            sync_service=_sync_service(),
+            relay_mode="off",
+        )
+
+        frame = result["frame"]
+        frame_set = result["synchronized_frame_set"]
+        manifest = db.query(FrameSetManifest).one()
+        member = db.query(FrameSetMember).one()
+        payload = json.loads(manifest.manifest_json)
+
+        assert frame.tenant_id == scope.tenant_id
+        assert frame.site_id == scope.site_id
+        assert frame.capture_session_id == scope.capture_session_id
+        assert frame.processing_job_id == scope.processing_job_id
+        assert frame.profile_digest == scope.profile_digest
+        assert frame.authorized_subject == scope.authorized_subject
+        assert frame.session_token_jti == scope.token_jti
+        assert frame.authorized_camera_id == camera_id
+        assert frame_set.capture_session_id == scope.capture_session_id
+        assert manifest.tenant_id == scope.tenant_id
+        assert manifest.site_id == scope.site_id
+        assert manifest.processing_job_id == scope.processing_job_id
+        assert manifest.profile_digest == scope.profile_digest
+        assert manifest.authorized_subject == scope.authorized_subject
+        assert manifest.session_token_jti == scope.token_jti
+        assert member.authorized_camera_id == camera_id
+        assert payload["authorization"]["tenant_id"] == scope.tenant_id
+        assert payload["authorization"]["processing_job_id"] == scope.processing_job_id
+        assert payload["members"][0]["authorized_camera_id"] == camera_id
+    finally:
+        db.close()
+
+
+def test_sync_rejects_cross_session_frame_substitution(session_factory, storage_dir):
+    db = session_factory()
+    sync_service = StreamSyncService()
+    sync_service.configure(
+        enabled=True,
+        expected_cameras=["device-1", "device-2"],
+        window_ms=50,
+    )
+    first_scope = _main_scope(
+        camera_id="11111111-1111-1111-1111-111111111111"
+    )
+    second_scope = AuthorizedSessionScope(
+        **{
+            **first_scope.__dict__,
+            "capture_session_id": "99999999-9999-9999-9999-999999999999",
+            "camera_ids": frozenset(
+                {"22222222-2222-2222-2222-222222222222"}
+            ),
+        }
+    )
+    try:
+        first = ingest_frame(
+            db,
+            device_id="device-1",
+            timestamp_ms=1000,
+            image_bytes=b"frame-1",
+            sequence=1,
+            session_id="source-1",
+            camera_stream_id=next(iter(first_scope.camera_ids)),
+            authorization_scope=first_scope,
+            state=StreamState(),
+            relay_service=ProcessingRelayService(),
+            frame_set_relay_service=ProcessingFrameSetRelayService(),
+            sync_service=sync_service,
+            relay_mode="off",
+        )
+        second = ingest_frame(
+            db,
+            device_id="device-2",
+            timestamp_ms=1005,
+            image_bytes=b"frame-2",
+            sequence=1,
+            session_id="source-2",
+            camera_stream_id=next(iter(second_scope.camera_ids)),
+            authorization_scope=second_scope,
+            state=StreamState(),
+            relay_service=ProcessingRelayService(),
+            frame_set_relay_service=ProcessingFrameSetRelayService(),
+            sync_service=sync_service,
+            relay_mode="off",
+        )
+
+        assert first["synchronized_frame_set"] is None
+        assert second["synchronized_frame_set"] is None
+        assert db.query(FrameSetManifest).count() == 0
+        assert "authorization scope conflict" in sync_service.status()["last_reason"]
+    finally:
+        db.close()
+
+
+def _main_scope(*, camera_id):
+    return AuthorizedSessionScope(
+        tenant_id="22222222-2222-2222-2222-222222222222",
+        site_id="33333333-3333-3333-3333-333333333333",
+        capture_session_id="44444444-4444-4444-4444-444444444444",
+        processing_job_id="55555555-5555-5555-5555-555555555555",
+        camera_ids=frozenset({camera_id}),
+        profile_digest="a" * 64,
+        authorized_subject="user-123",
+        token_jti="55555555-5555-5555-5555-555555555555",
+        expires_at=2_000_000_000,
+    )

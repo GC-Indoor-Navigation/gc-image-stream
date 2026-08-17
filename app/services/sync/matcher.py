@@ -31,6 +31,7 @@ class SyncMatcher:
         self._next_frame_set_id = 1
         self._capture_session_id: str | None = None
         self._capture_config_key: tuple[tuple[str, str], ...] | None = None
+        self._authorization_key: tuple[str, ...] | None = None
         self._capture_run_id = str(uuid4())
         self._last_synchronized_at_ms = 0
         self._emitted_keys: set[tuple[str, ...]] = set()
@@ -89,6 +90,22 @@ class SyncMatcher:
             self._drop_stale_frames()
             return None
 
+        try:
+            (
+                identity_mode,
+                capture_session_id,
+                capture_config_key,
+                authorization_key,
+            ) = _resolve_capture_identity(selected)
+        except FrameScopeConflict as exc:
+            self._record_miss(
+                trigger_frame=trigger_frame,
+                reason=str(exc),
+                missing_cameras=[],
+            )
+            self._drop_stale_frames()
+            return None
+
         key = tuple(sorted(frame.buffer_key for frame in selected.values()))
         if key in self._emitted_keys:
             self.duplicate_count += 1
@@ -100,17 +117,13 @@ class SyncMatcher:
         self._emitted_keys.add(key)
         self._used_frame_keys.update(key)
 
-        (
-            identity_mode,
-            capture_session_id,
-            capture_config_key,
-        ) = _resolve_capture_identity(selected)
         if (
             capture_session_id is not None
             and self._capture_session_id is not None
             and (
                 capture_session_id != self._capture_session_id
                 or capture_config_key != self._capture_config_key
+                or authorization_key != self._authorization_key
             )
         ):
             self._capture_run_id = str(uuid4())
@@ -118,6 +131,7 @@ class SyncMatcher:
         if capture_session_id is not None:
             self._capture_session_id = capture_session_id
             self._capture_config_key = capture_config_key
+            self._authorization_key = authorization_key
 
         anchor_timestamp_ms = max(frame.timestamp_ms for frame in selected.values())
         frame_set_id = self._next_frame_set_id
@@ -128,6 +142,7 @@ class SyncMatcher:
             sync_window_ms=self.window_ms,
             synchronization_span_ms=span_ms,
             anchor_timestamp_ms=anchor_timestamp_ms,
+            authorization_key=authorization_key,
         )
         manifest_digest = build_manifest_digest(manifest_payload)
         degraded_frames = [
@@ -176,6 +191,12 @@ class SyncMatcher:
             sync_window_ms=self.window_ms,
             synchronized_at_ms=synchronized_at_ms,
             member_count=len(selected),
+            tenant_id=(authorization_key[0] if authorization_key else None),
+            site_id=(authorization_key[1] if authorization_key else None),
+            processing_job_id=(authorization_key[3] if authorization_key else None),
+            profile_digest=(authorization_key[4] if authorization_key else None),
+            authorized_subject=(authorization_key[5] if authorization_key else None),
+            session_token_jti=(authorization_key[6] if authorization_key else None),
         )
         self._next_frame_set_id += 1
         self.matched_count += 1
@@ -393,9 +414,18 @@ class SyncMatcher:
         self.dropped_stale_count += dropped_count
 
 
+class FrameScopeConflict(ValueError):
+    pass
+
+
 def _resolve_capture_identity(
     frames: dict[str, StoredSyncFrame],
-) -> tuple[str, str | None, tuple[tuple[str, str], ...] | None]:
+) -> tuple[
+    str,
+    str | None,
+    tuple[tuple[str, str], ...] | None,
+    tuple[str, ...] | None,
+]:
     if not all(
         frame.identity_mode == IDENTITY_MODE_V2
         and frame.source_session_id
@@ -405,13 +435,64 @@ def _resolve_capture_identity(
         and frame.content_digest
         for frame in frames.values()
     ):
-        return IDENTITY_MODE_LEGACY, None, None
-    return (
-        IDENTITY_MODE_V2,
-        build_capture_session_id(
+        return IDENTITY_MODE_LEGACY, None, None, None
+    authorization_keys = {
+        (
+            frame.tenant_id,
+            frame.site_id,
+            frame.capture_session_id,
+            frame.processing_job_id,
+            frame.profile_digest,
+            frame.authorized_subject,
+            frame.session_token_jti,
+        )
+        for frame in frames.values()
+        if any(
+            (
+                frame.tenant_id,
+                frame.site_id,
+                frame.capture_session_id,
+                frame.processing_job_id,
+                frame.profile_digest,
+                frame.authorized_subject,
+                frame.session_token_jti,
+                frame.authorized_camera_id,
+            )
+        )
+    }
+    if authorization_keys:
+        if len(authorization_keys) != 1 or any(
+            not all(
+                (
+                    frame.tenant_id,
+                    frame.site_id,
+                    frame.capture_session_id,
+                    frame.processing_job_id,
+                    frame.profile_digest,
+                    frame.authorized_subject,
+                    frame.session_token_jti,
+                    frame.authorized_camera_id,
+                )
+            )
+            for frame in frames.values()
+        ):
+            raise FrameScopeConflict("authorization scope conflict across frame set")
+        authorized_camera_ids = [
+            frame.authorized_camera_id for frame in frames.values()
+        ]
+        if len(set(authorized_camera_ids)) != len(authorized_camera_ids):
+            raise FrameScopeConflict("authorized camera was reused across frame set")
+        authorization_key = next(iter(authorization_keys))
+        capture_session_id = authorization_key[2]
+    else:
+        authorization_key = None
+        capture_session_id = build_capture_session_id(
             (frame.camera_stream_id, frame.source_session_id)
             for frame in frames.values()
-        ),
+        )
+    return (
+        IDENTITY_MODE_V2,
+        capture_session_id,
         tuple(
             sorted(
                 (
@@ -421,6 +502,7 @@ def _resolve_capture_identity(
                 for frame in frames.values()
             )
         ),
+        authorization_key,
     )
 
 
@@ -432,11 +514,25 @@ def _build_manifest_payload(
     sync_window_ms: int,
     synchronization_span_ms: int,
     anchor_timestamp_ms: int,
+    authorization_key: tuple[str, ...] | None,
 ) -> dict:
     return {
         "schema_version": 2,
         "identity_mode": identity_mode,
         "capture_session_id": capture_session_id,
+        "authorization": (
+            {
+                "tenant_id": authorization_key[0],
+                "site_id": authorization_key[1],
+                "capture_session_id": authorization_key[2],
+                "processing_job_id": authorization_key[3],
+                "profile_digest": authorization_key[4],
+                "authorized_subject": authorization_key[5],
+                "session_token_jti": authorization_key[6],
+            }
+            if authorization_key
+            else None
+        ),
         "synchronization": {
             "algorithm": "minimum-span-v1",
             "window_ms": sync_window_ms,
@@ -458,6 +554,7 @@ def _build_manifest_payload(
                 "image_size": frame.image_size,
                 "content_digest": frame.content_digest,
                 "capture_config_digest": frame.capture_config_digest,
+                "authorized_camera_id": frame.authorized_camera_id,
                 "capture_metadata_json": (
                     frame.capture_metadata_json
                     if frame.capture_metadata_json is not None
