@@ -1,7 +1,7 @@
 import hashlib
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from app.infrastructure.grpc.generated import live_frame_relay_v2_pb2 as relay_pb2
@@ -29,7 +29,7 @@ class ArchiveIntegrityError(ValueError):
 @dataclass(frozen=True)
 class ProtocolConfig:
     producer_session_id: str
-    processing_profile_digest: str
+    processing_profile_digest: str | None
     producer_freshness_budget_ms: int
     maximum_clock_uncertainty_ms: int = 0
     protocol_version: int = 2
@@ -44,6 +44,24 @@ class NegotiatedSession:
     stream_epoch: str
     maximum_payload_bytes: int
     processing_profile_digest: str
+
+
+def bind_authorized_claim(
+    config: ProtocolConfig,
+    claim: ClaimedFrameSet,
+) -> ProtocolConfig:
+    if claim.profile_digest:
+        if (
+            config.processing_profile_digest
+            and config.processing_profile_digest != claim.profile_digest
+        ):
+            raise CreditRejected(
+                "configured profile digest conflicts with authorized manifest"
+            )
+        return replace(config, processing_profile_digest=claim.profile_digest)
+    if not config.processing_profile_digest:
+        raise CreditRejected("frame set is missing a processing profile digest")
+    return config
 
 
 def build_producer_hello(
@@ -80,6 +98,13 @@ def build_producer_hello(
         ),
         "unresolved_frame_sets": [_proto_key(key) for key in unresolved],
     }
+    if claim.tenant_id:
+        fields.update(
+            tenant_id=claim.tenant_id,
+            site_id=claim.site_id,
+            authorized_subject=claim.authorized_subject,
+            session_token_jti=claim.session_token_jti,
+        )
     if watermark is not None:
         fields["last_offered_watermark"] = _proto_key(watermark)
     if proposed_processing_job_id:
@@ -254,6 +279,10 @@ def build_credited_frame_set(
         alert_deadline_utc_ms=effective_deadline_utc_ms,
         reserved_delivery_bound_ms=0,
         processing_profile_digest=config.processing_profile_digest,
+        tenant_id=claim.tenant_id or "",
+        site_id=claim.site_id or "",
+        authorized_subject=claim.authorized_subject or "",
+        session_token_jti=claim.session_token_jti or "",
     )
     envelope = relay_pb2.ProducerEnvelope(frame_set=frame_set)
     serialize_with_limit(

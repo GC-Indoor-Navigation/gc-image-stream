@@ -26,6 +26,7 @@ from app.services.relay_v2 import (
     build_no_data,
     build_producer_hello,
     build_reconciliation_request,
+    bind_authorized_claim,
     credit_identity,
 )
 
@@ -188,11 +189,12 @@ class ProcessingLiveRelayV2Client:
 
     def _run_connection(self) -> bool:
         store = self._required_store()
-        config = self._required_config()
+        base_config = self._required_config()
         hello_snapshot = store.snapshot_for_hello()
         if hello_snapshot is None:
             self._stop_event.wait(0.05)
             return False
+        config = bind_authorized_claim(base_config, hello_snapshot)
 
         outgoing: queue.Queue = queue.Queue(maxsize=2)
         outgoing.put(
@@ -268,6 +270,7 @@ class ProcessingLiveRelayV2Client:
                         expected_capture_run_id=(
                             hello_snapshot.key.capture_run_id
                         ),
+                        config=config,
                     )
                 elif body == "status":
                     self._apply_status(envelope.status, store)
@@ -293,6 +296,7 @@ class ProcessingLiveRelayV2Client:
         session: NegotiatedSession,
         outgoing: queue.Queue,
         expected_capture_run_id: str | None = None,
+        config: ProtocolConfig | None = None,
     ) -> None:
         received_monotonic = self._monotonic()
         identity = credit_identity(credit, session)
@@ -322,7 +326,7 @@ class ProcessingLiveRelayV2Client:
                 claim=claim,
                 credit=credit,
                 session=session,
-                config=self._required_config(),
+                config=config or self._required_config(),
                 credit_received_monotonic=received_monotonic,
                 now_monotonic=self._monotonic(),
                 now_utc_ms=self._utc_now_ms(),

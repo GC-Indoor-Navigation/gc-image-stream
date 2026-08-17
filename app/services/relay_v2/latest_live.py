@@ -52,6 +52,12 @@ class ClaimedFrameSet:
     manifest_json: str
     offered_at_ms: int
     members: tuple[LiveFrameMember, ...]
+    tenant_id: str | None = None
+    site_id: str | None = None
+    processing_job_id: str | None = None
+    profile_digest: str | None = None
+    authorized_subject: str | None = None
+    session_token_jti: str | None = None
 
 
 class LatestLiveStore:
@@ -504,6 +510,12 @@ class LatestLiveStore:
                 )
                 for member in members
             ),
+            tenant_id=manifest.tenant_id,
+            site_id=manifest.site_id,
+            processing_job_id=manifest.processing_job_id,
+            profile_digest=manifest.profile_digest,
+            authorized_subject=manifest.authorized_subject,
+            session_token_jti=manifest.session_token_jti,
         )
 
     @staticmethod

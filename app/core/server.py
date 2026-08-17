@@ -115,9 +115,13 @@ if STREAM_RELAY_V2_SHADOW_ENABLED:
             "STREAM_RELAY_V2_TARGET must differ from STREAM_RELAY_TARGET "
             "when legacy and v2 relays are both enabled"
         )
-    if not STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST:
+    if (
+        not STREAM_SESSION_AUTH_ENABLED
+        and not STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST
+    ):
         raise RuntimeError(
-            "STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST is required when v2 shadow is enabled"
+            "STREAM_RELAY_V2_PROCESSING_PROFILE_DIGEST is required when v2 "
+            "shadow runs without Main session authentication"
         )
     if STREAM_RELAY_V2_PRODUCER_FRESHNESS_BUDGET_MS <= 0:
         raise RuntimeError(

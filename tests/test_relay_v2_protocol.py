@@ -17,11 +17,12 @@ from app.services.relay_v2 import (
     accept_hello,
     build_credited_frame_set,
     build_producer_hello,
+    bind_authorized_claim,
     credit_identity,
 )
 
 
-def _claim(tmp_path, payload=b"frame"):
+def _claim(tmp_path, payload=b"frame", *, authorized=False):
     path = tmp_path / "frame.jpg"
     path.write_bytes(payload)
     metadata = {
@@ -41,6 +42,18 @@ def _claim(tmp_path, payload=b"frame"):
             }
         ]
     }
+    authorization = (
+        {
+            "tenant_id": "tenant-1",
+            "site_id": "site-1",
+            "processing_job_id": "job-1",
+            "profile_digest": "authorized-profile",
+            "authorized_subject": "user-1",
+            "session_token_jti": "job-1",
+        }
+        if authorized
+        else {}
+    )
     return ClaimedFrameSet(
         key=FrameSetKey("run-1", 7, "set-7"),
         credit=CreditIdentity("processor-1", "epoch-1", "credit-1"),
@@ -65,6 +78,7 @@ def _claim(tmp_path, payload=b"frame"):
                 file_path=str(path),
             ),
         ),
+        **authorization,
     )
 
 
@@ -207,3 +221,57 @@ def test_archive_digest_mismatch_is_terminal_integrity_error(tmp_path):
             now_monotonic=5.01,
             now_utc_ms=10_100,
         )
+
+
+def test_authorized_manifest_drives_hello_and_frame_set_identity(tmp_path):
+    claim = _claim(tmp_path, authorized=True)
+    config = bind_authorized_claim(
+        ProtocolConfig(
+            producer_session_id="producer-1",
+            processing_profile_digest=None,
+            producer_freshness_budget_ms=500,
+        ),
+        claim,
+    )
+    hello = build_producer_hello(
+        config=config,
+        claim=claim,
+        watermark=None,
+        unresolved=(),
+        proposed_processing_job_id=claim.processing_job_id,
+        measured_utc_ms=10_040,
+    ).hello
+    session = NegotiatedSession(
+        processing_job_id=claim.processing_job_id,
+        processor_instance_id="processor-1",
+        stream_epoch="epoch-1",
+        maximum_payload_bytes=1_000_000,
+        processing_profile_digest=claim.profile_digest,
+    )
+    frame_set = build_credited_frame_set(
+        claim=claim,
+        credit=_credit(),
+        session=session,
+        config=config,
+        credit_received_monotonic=5.0,
+        now_monotonic=5.01,
+        now_utc_ms=10_100,
+    ).frame_set
+
+    assert hello.tenant_id == claim.tenant_id
+    assert hello.site_id == claim.site_id
+    assert hello.authorized_subject == claim.authorized_subject
+    assert hello.session_token_jti == claim.session_token_jti
+    assert hello.processing_profile_digest == claim.profile_digest
+    assert frame_set.tenant_id == claim.tenant_id
+    assert frame_set.site_id == claim.site_id
+    assert frame_set.authorized_subject == claim.authorized_subject
+    assert frame_set.session_token_jti == claim.session_token_jti
+    assert frame_set.processing_profile_digest == claim.profile_digest
+
+
+def test_static_profile_cannot_override_authorized_manifest(tmp_path):
+    claim = _claim(tmp_path, authorized=True)
+
+    with pytest.raises(CreditRejected, match="conflicts"):
+        bind_authorized_claim(_config(), claim)
