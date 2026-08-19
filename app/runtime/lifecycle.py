@@ -22,11 +22,19 @@ from app.core.server import (
     STREAM_RELAY_V2_PRODUCER_FRESHNESS_BUDGET_MS,
     STREAM_RELAY_V2_SHADOW_ENABLED,
     STREAM_RELAY_V2_TARGET,
+    STREAM_RELAY_CREDENTIAL_AUDIENCE,
+    STREAM_RELAY_CREDENTIAL_ENABLED,
+    STREAM_RELAY_CREDENTIAL_HTTP_TIMEOUT_SEC,
+    STREAM_RELAY_CREDENTIAL_URL_TEMPLATE,
     STREAM_SYNC_BUFFER_SIZE,
     STREAM_SYNC_ENABLED,
     STREAM_SYNC_EXPECTED_CAMERAS,
     STREAM_SYNC_RECENT_LIMIT,
     STREAM_SYNC_WINDOW_MS,
+    STREAM_WORKLOAD_CLIENT_ID,
+    STREAM_WORKLOAD_CLIENT_SECRET,
+    STREAM_WORKLOAD_SCOPE,
+    STREAM_WORKLOAD_TOKEN_URL,
     STREAM_SESSION_AUTH_ENABLED,
     STREAM_CAMERA_INGEST_AUTH_ENABLED,
     STREAM_CAMERA_INGEST_TOKEN_AUDIENCE,
@@ -59,6 +67,11 @@ from app.services.session_identity import (
     SessionStatusCache,
     SessionTokenVerifier,
     VersionedIngestCredentialVerifier,
+)
+from app.services.relay_credentials import (
+    ClientCredentialsTokenProvider,
+    MainProcessingRelayCredentialProvider,
+    ProcessingRelayCredentialVerifier,
 )
 
 
@@ -96,6 +109,24 @@ async def startup_application():
         "orphan_files": reconciliation.orphan_files,
         "partial_files": reconciliation.partial_files,
     }
+    relay_credential_provider = None
+    if STREAM_RELAY_CREDENTIAL_ENABLED:
+        relay_credential_provider = MainProcessingRelayCredentialProvider(
+            url_template=STREAM_RELAY_CREDENTIAL_URL_TEMPLATE,
+            access_tokens=ClientCredentialsTokenProvider(
+                token_url=STREAM_WORKLOAD_TOKEN_URL,
+                client_id=STREAM_WORKLOAD_CLIENT_ID,
+                client_secret=STREAM_WORKLOAD_CLIENT_SECRET,
+                scope=STREAM_WORKLOAD_SCOPE,
+                timeout_sec=STREAM_RELAY_CREDENTIAL_HTTP_TIMEOUT_SEC,
+            ),
+            verifier=ProcessingRelayCredentialVerifier(
+                issuer=STREAM_SESSION_TOKEN_ISSUER,
+                audience=STREAM_RELAY_CREDENTIAL_AUDIENCE,
+                key_cache=JwksKeyCache(STREAM_SESSION_JWKS_URL),
+            ),
+            timeout_sec=STREAM_RELAY_CREDENTIAL_HTTP_TIMEOUT_SEC,
+        )
     processing_live_relay_v2_client.configure(
         target=STREAM_RELAY_V2_TARGET,
         enabled=STREAM_RELAY_V2_SHADOW_ENABLED,
@@ -116,6 +147,7 @@ async def startup_application():
             if STREAM_RELAY_V2_SHADOW_ENABLED
             else None
         ),
+        relay_credential_provider=relay_credential_provider,
     )
     if reconciliation.degraded_frames or reconciliation.orphan_files or reconciliation.partial_files:
         logger.warning(format_log_event("archive_reconciliation_degraded", **reconciliation_fields))

@@ -22,6 +22,10 @@ from app.services.session_identity import (
     ActiveSessionCredentialStore,
     AuthorizedSessionScope,
 )
+from app.services.relay_credentials import (
+    ActiveProcessingRelayCredential,
+    ProcessingRelayScope,
+)
 
 
 def _config():
@@ -302,3 +306,125 @@ def test_authorized_relay_forwards_token_as_grpc_metadata(
     assert observed["hello"].tenant_id == "tenant-1"
     assert observed["hello"].processing_profile_digest == "a" * 64
     assert observed["closed"] is True
+
+
+def test_workload_relay_credential_replaces_participant_identity(
+    session_factory,
+    tmp_path,
+    monkeypatch,
+):
+    _persist_candidate(session_factory, tmp_path, authorized=True)
+    relay_scope = _relay_scope()
+    provider = _RelayCredentialProvider(relay_scope)
+    observed = {}
+
+    class Channel:
+        def close(self):
+            observed["closed"] = True
+
+    def relay(requests, metadata=None):
+        observed["metadata"] = metadata
+        observed["hello"] = next(requests).hello
+        yield relay_pb2.ProcessorEnvelope(
+            hello_rejected=relay_pb2.HelloRejected(
+                reason=relay_pb2.IDENTITY_CONFLICT,
+                detail_code="TEST_STOP",
+                retryable=False,
+            )
+        )
+
+    client = ProcessingLiveRelayV2Client(
+        channel_factory=lambda target: Channel(),
+        relay_credential_provider=provider,
+    )
+    monkeypatch.setattr(client, "build_stub", lambda channel: relay)
+    client.configure(
+        target="processing:50053",
+        enabled=True,
+        session_factory=session_factory,
+        protocol_config=ProtocolConfig(
+            producer_session_id="producer-1",
+            processing_profile_digest=None,
+            producer_freshness_budget_ms=500,
+        ),
+        relay_credential_provider=provider,
+    )
+
+    with pytest.raises(PermanentRelayError, match="TEST_STOP"):
+        client._run_connection()
+
+    assert observed["metadata"] == (
+        ("authorization", "Bearer signed-relay-token"),
+    )
+    assert observed["hello"].authorized_subject == "coordinator-1"
+    assert observed["hello"].session_token_jti == "relay-jti-1"
+    assert provider.claims[0].authorized_subject == "user-1"
+
+
+def test_workload_relay_identity_is_used_on_credited_frame_set(
+    session_factory,
+    tmp_path,
+):
+    _persist_candidate(session_factory, tmp_path, authorized=True)
+    relay_scope = _relay_scope()
+    outgoing = queue.Queue(maxsize=2)
+    client = ProcessingLiveRelayV2Client(
+        monotonic=lambda: 5.0,
+        utc_now_ms=lambda: 10_100,
+    )
+    client.configure(
+        target="processing:50053",
+        enabled=True,
+        session_factory=session_factory,
+        protocol_config=ProtocolConfig(
+            producer_session_id="producer-1",
+            processing_profile_digest="a" * 64,
+            producer_freshness_budget_ms=500,
+        ),
+    )
+
+    client._handle_credit(
+        _credit(),
+        NegotiatedSession(
+            processing_job_id="job-1",
+            processor_instance_id="processor-1",
+            stream_epoch="epoch-1",
+            maximum_payload_bytes=1_000_000,
+            processing_profile_digest="a" * 64,
+        ),
+        outgoing,
+        config=client._required_config(),
+        relay_scope=relay_scope,
+    )
+
+    frame_set = outgoing.get_nowait().frame_set
+    assert frame_set.authorized_subject == "coordinator-1"
+    assert frame_set.session_token_jti == "relay-jti-1"
+
+
+def _relay_scope():
+    return ProcessingRelayScope(
+        tenant_id="tenant-1",
+        site_id="site-1",
+        capture_session_id="capture-session",
+        processing_job_id="job-1",
+        profile_digest="a" * 64,
+        coordinator_subject="coordinator-1",
+        camera_ids=frozenset({"camera-1"}),
+        workload_subject="gc-image-stream:service-account",
+        token_jti="relay-jti-1",
+        expires_at=2_000_000_000,
+    )
+
+
+class _RelayCredentialProvider:
+    def __init__(self, scope):
+        self.scope = scope
+        self.claims = []
+
+    def resolve_for_claim(self, claim):
+        self.claims.append(claim)
+        return ActiveProcessingRelayCredential(
+            token="signed-relay-token",
+            scope=self.scope,
+        )

@@ -108,6 +108,49 @@ STREAM_RELAY_V2_MAXIMUM_CLOCK_UNCERTAINTY_MS = get_optional_int_env(
     "STREAM_RELAY_V2_MAXIMUM_CLOCK_UNCERTAINTY_MS",
     0,
 )
+STREAM_RELAY_CREDENTIAL_ENABLED = get_optional_bool_env(
+    "STREAM_RELAY_CREDENTIAL_ENABLED",
+    False,
+)
+STREAM_RELAY_CREDENTIAL_URL_TEMPLATE = get_optional_str_env(
+    "STREAM_RELAY_CREDENTIAL_URL_TEMPLATE"
+)
+STREAM_RELAY_CREDENTIAL_AUDIENCE = get_optional_str_env(
+    "STREAM_RELAY_CREDENTIAL_AUDIENCE",
+    "gc-processing-relay",
+)
+STREAM_RELAY_CREDENTIAL_HTTP_TIMEOUT_SEC = get_optional_float_env(
+    "STREAM_RELAY_CREDENTIAL_HTTP_TIMEOUT_SEC",
+    2.0,
+)
+STREAM_WORKLOAD_TOKEN_URL = get_optional_str_env("STREAM_WORKLOAD_TOKEN_URL")
+STREAM_WORKLOAD_CLIENT_ID = get_optional_str_env(
+    "STREAM_WORKLOAD_CLIENT_ID",
+    "gc-image-stream",
+)
+STREAM_WORKLOAD_CLIENT_SECRET = get_optional_str_env(
+    "STREAM_WORKLOAD_CLIENT_SECRET"
+)
+STREAM_WORKLOAD_SCOPE = get_optional_str_env("STREAM_WORKLOAD_SCOPE")
+if STREAM_RELAY_CREDENTIAL_ENABLED:
+    if not STREAM_RELAY_V2_SHADOW_ENABLED:
+        raise RuntimeError(
+            "relay credentials require the v2 relay endpoint to be enabled"
+        )
+    if not (
+        STREAM_RELAY_CREDENTIAL_URL_TEMPLATE
+        and STREAM_WORKLOAD_TOKEN_URL
+        and STREAM_WORKLOAD_CLIENT_ID
+        and STREAM_WORKLOAD_CLIENT_SECRET
+        and STREAM_SESSION_JWKS_URL
+        and STREAM_SESSION_TOKEN_ISSUER
+    ):
+        raise RuntimeError(
+            "Main relay credential URL, workload client settings, JWKS URL, "
+            "and issuer are required when relay credentials are enabled"
+        )
+    if STREAM_RELAY_CREDENTIAL_HTTP_TIMEOUT_SEC <= 0:
+        raise RuntimeError("relay credential HTTP timeout must be positive")
 STREAM_RELAY_V2_ALERT_RECEIVER_ENABLED = get_optional_bool_env(
     "STREAM_RELAY_V2_ALERT_RECEIVER_ENABLED",
     False,

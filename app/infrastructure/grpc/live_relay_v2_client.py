@@ -4,7 +4,7 @@ import random
 import threading
 import time
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import grpc
 
@@ -33,6 +33,7 @@ from app.services.session_identity import (
     ActiveSessionCredentialStore,
     active_session_credentials,
 )
+from app.services.relay_credentials import ProcessingRelayScope
 
 
 LOGGER = logging.getLogger("gc_image_stream.relay_v2")
@@ -69,6 +70,7 @@ class ProcessingLiveRelayV2Client:
         utc_now_ms: Callable[[], int] | None = None,
         backoff: ReconnectBackoff | None = None,
         credential_store: ActiveSessionCredentialStore = active_session_credentials,
+        relay_credential_provider=None,
     ):
         self.enabled = False
         self.target = ""
@@ -88,6 +90,7 @@ class ProcessingLiveRelayV2Client:
         self._offered_count = 0
         self._no_data_count = 0
         self._credential_store = credential_store
+        self._relay_credential_provider = relay_credential_provider
 
     def configure(
         self,
@@ -96,6 +99,7 @@ class ProcessingLiveRelayV2Client:
         enabled: bool = False,
         session_factory=None,
         protocol_config: ProtocolConfig | None = None,
+        relay_credential_provider=None,
     ) -> None:
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
@@ -112,6 +116,7 @@ class ProcessingLiveRelayV2Client:
                 else None
             )
             self._protocol_config = protocol_config
+            self._relay_credential_provider = relay_credential_provider
             self.last_error = None
 
     def build_stub(self, channel):
@@ -201,17 +206,28 @@ class ProcessingLiveRelayV2Client:
             self._stop_event.wait(0.05)
             return False
         config = bind_authorized_claim(base_config, hello_snapshot)
-        credential = (
-            self._credential_store.resolve_for_claim(hello_snapshot)
-            if hello_snapshot.processing_job_id
-            else None
+        credential = None
+        relay_scope = None
+        if hello_snapshot.processing_job_id:
+            if self._relay_credential_provider is not None:
+                credential = self._relay_credential_provider.resolve_for_claim(
+                    hello_snapshot
+                )
+                relay_scope = credential.scope
+            else:
+                credential = self._credential_store.resolve_for_claim(
+                    hello_snapshot
+                )
+        authorized_hello_snapshot = _bind_relay_scope(
+            hello_snapshot,
+            relay_scope,
         )
 
         outgoing: queue.Queue = queue.Queue(maxsize=2)
         outgoing.put(
             build_producer_hello(
                 config=config,
-                claim=hello_snapshot,
+                claim=authorized_hello_snapshot,
                 watermark=store.offered_watermark(),
                 unresolved=store.unresolved_keys(),
                 proposed_processing_job_id=store.processing_job_for(
@@ -290,6 +306,7 @@ class ProcessingLiveRelayV2Client:
                             hello_snapshot.key.capture_run_id
                         ),
                         config=config,
+                        relay_scope=relay_scope,
                     )
                 elif body == "status":
                     self._apply_status(envelope.status, store)
@@ -316,6 +333,7 @@ class ProcessingLiveRelayV2Client:
         outgoing: queue.Queue,
         expected_capture_run_id: str | None = None,
         config: ProtocolConfig | None = None,
+        relay_scope: ProcessingRelayScope | None = None,
     ) -> None:
         received_monotonic = self._monotonic()
         identity = credit_identity(credit, session)
@@ -340,6 +358,7 @@ class ProcessingLiveRelayV2Client:
             with self._lock:
                 self._no_data_count += 1
             return
+        claim = _bind_relay_scope(claim, relay_scope)
         try:
             payload = build_credited_frame_set(
                 claim=claim,
@@ -459,3 +478,17 @@ class ProcessingLiveRelayV2Client:
 
 
 processing_live_relay_v2_client = ProcessingLiveRelayV2Client()
+
+
+def _bind_relay_scope(claim, scope: ProcessingRelayScope | None):
+    if scope is None:
+        return claim
+    if not scope.matches_claim(claim):
+        raise PermanentRelayError(
+            "processing relay credential does not match current frame set"
+        )
+    return replace(
+        claim,
+        authorized_subject=scope.coordinator_subject,
+        session_token_jti=scope.token_jti,
+    )
