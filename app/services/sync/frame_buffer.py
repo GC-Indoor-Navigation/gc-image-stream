@@ -128,6 +128,7 @@ class SyncFrameBufferManager:
             authorized_subject=frame.authorized_subject,
             session_token_jti=frame.session_token_jti,
             authorized_camera_id=frame.authorized_camera_id,
+            camera_claim_id=frame.camera_claim_id,
         )
 
         with self._lock:

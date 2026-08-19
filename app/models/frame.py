@@ -61,3 +61,4 @@ class Frame(Base):
     authorized_subject = Column(String, nullable=True)
     session_token_jti = Column(String, nullable=True)
     authorized_camera_id = Column(String, nullable=True)
+    camera_claim_id = Column(String, nullable=True)

@@ -28,6 +28,7 @@ class SyncInputFrame:
     authorized_subject: str | None = None
     session_token_jti: str | None = None
     authorized_camera_id: str | None = None
+    camera_claim_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -59,6 +60,7 @@ class StoredSyncFrame:
     authorized_subject: str | None = None
     session_token_jti: str | None = None
     authorized_camera_id: str | None = None
+    camera_claim_id: str | None = None
 
 
 @dataclass(frozen=True)

@@ -197,6 +197,7 @@ def test_authorization_scope_columns_migrate_additively(tmp_path):
         "authorized_subject",
         "session_token_jti",
         "authorized_camera_id",
+        "camera_claim_id",
     } <= {
         column["name"] for column in inspect(engine).get_columns("frames")
     }
@@ -211,7 +212,12 @@ def test_authorization_scope_columns_migrate_additively(tmp_path):
         column["name"]
         for column in inspect(engine).get_columns("frame_set_manifests")
     }
-    assert "authorized_camera_id" in {
+    assert {
+        "authorized_camera_id",
+        "camera_claim_id",
+        "authorized_subject",
+        "session_token_jti",
+    } <= {
         column["name"]
         for column in inspect(engine).get_columns("frame_set_members")
     }

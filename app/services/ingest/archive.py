@@ -48,6 +48,7 @@ def persist_frame_archive(
     authorized_subject: str | None = None,
     session_token_jti: str | None = None,
     authorized_camera_id: str | None = None,
+    camera_claim_id: str | None = None,
     initial_error: str | None = None,
     writer: ArchiveWriter | None = None,
 ) -> FrameArchiveOutcome:
@@ -89,6 +90,7 @@ def persist_frame_archive(
             authorized_subject=authorized_subject,
             session_token_jti=session_token_jti,
             authorized_camera_id=authorized_camera_id,
+            camera_claim_id=camera_claim_id,
         )
     except Exception as exc:
         db.rollback()

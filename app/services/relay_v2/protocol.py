@@ -102,8 +102,8 @@ def build_producer_hello(
         fields.update(
             tenant_id=claim.tenant_id,
             site_id=claim.site_id,
-            authorized_subject=claim.authorized_subject,
-            session_token_jti=claim.session_token_jti,
+            authorized_subject=claim.authorized_subject or "",
+            session_token_jti=claim.session_token_jti or "",
         )
     if watermark is not None:
         fields["last_offered_watermark"] = _proto_key(watermark)

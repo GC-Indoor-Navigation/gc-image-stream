@@ -247,6 +247,7 @@ def migrate_authorization_scope_schema(engine: Engine) -> bool:
             "authorized_subject": "VARCHAR",
             "session_token_jti": "VARCHAR",
             "authorized_camera_id": "VARCHAR",
+            "camera_claim_id": "VARCHAR",
         },
         "frame_set_manifests": {
             "tenant_id": "VARCHAR",
@@ -258,6 +259,9 @@ def migrate_authorization_scope_schema(engine: Engine) -> bool:
         },
         "frame_set_members": {
             "authorized_camera_id": "VARCHAR",
+            "camera_claim_id": "VARCHAR",
+            "authorized_subject": "VARCHAR",
+            "session_token_jti": "VARCHAR",
         },
     }
     changed = False

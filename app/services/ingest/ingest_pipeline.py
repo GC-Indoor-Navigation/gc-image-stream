@@ -306,6 +306,7 @@ def _authorization_scope_fields(scope, *, authorized_camera_id: str | None) -> d
         "authorized_subject": scope.authorized_subject,
         "session_token_jti": scope.token_jti,
         "authorized_camera_id": authorized_camera_id,
+        "camera_claim_id": getattr(scope, "camera_claim_id", None),
     }
 
 

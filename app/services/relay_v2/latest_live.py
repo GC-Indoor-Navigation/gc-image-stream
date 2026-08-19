@@ -38,6 +38,9 @@ class LiveFrameMember:
     content_digest: str
     file_path: str
     authorized_camera_id: str | None = None
+    camera_claim_id: str | None = None
+    authorized_subject: str | None = None
+    session_token_jti: str | None = None
 
 
 @dataclass(frozen=True)
@@ -519,6 +522,9 @@ class LatestLiveStore:
                     content_digest=member.content_digest,
                     file_path=member.file_path,
                     authorized_camera_id=member.authorized_camera_id,
+                    camera_claim_id=member.camera_claim_id,
+                    authorized_subject=member.authorized_subject,
+                    session_token_jti=member.session_token_jti,
                 )
                 for member in members
             ),

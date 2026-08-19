@@ -39,6 +39,7 @@ def create_frame(
     authorized_subject: str | None = None,
     session_token_jti: str | None = None,
     authorized_camera_id: str | None = None,
+    camera_claim_id: str | None = None,
 ) -> Frame:
     source_frame_uid, identity_mode = resolve_frame_identity(
         source_session_id=source_session_id,
@@ -66,6 +67,7 @@ def create_frame(
             authorized_subject=authorized_subject,
             session_token_jti=session_token_jti,
             authorized_camera_id=authorized_camera_id,
+            camera_claim_id=camera_claim_id,
         )
         _apply_archive_recovery(
             db,
@@ -102,6 +104,7 @@ def create_frame(
         authorized_subject=authorized_subject,
         session_token_jti=session_token_jti,
         authorized_camera_id=authorized_camera_id,
+        camera_claim_id=camera_claim_id,
     )
     db.add(frame)
     try:
@@ -129,6 +132,7 @@ def create_frame(
                 authorized_subject=authorized_subject,
                 session_token_jti=session_token_jti,
                 authorized_camera_id=authorized_camera_id,
+                camera_claim_id=camera_claim_id,
             )
             _apply_archive_recovery(
                 db,

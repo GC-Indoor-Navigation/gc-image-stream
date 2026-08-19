@@ -19,7 +19,10 @@ from app.services.identity import (
 )
 from app.services.ingest.ingest_pipeline import ingest_frame
 from app.services.stream.state import StreamState
-from app.services.session_identity import AuthorizedSessionScope
+from app.services.session_identity import (
+    AuthorizedCameraIngestScope,
+    AuthorizedSessionScope,
+)
 from app.services.sync import (
     StreamSyncService,
     SyncFrameBufferManager,
@@ -410,6 +413,103 @@ def test_sync_rejects_cross_session_frame_substitution(session_factory, storage_
         db.close()
 
 
+def test_camera_scoped_participants_form_one_auditable_frame_set(
+    session_factory,
+    storage_dir,
+):
+    db = session_factory()
+    sync_service = StreamSyncService()
+    sync_service.configure(
+        enabled=True,
+        expected_cameras=["device-1", "device-2"],
+        window_ms=50,
+    )
+    first_scope = _camera_scope(
+        camera_id="11111111-1111-1111-1111-111111111111",
+        camera_claim_id="66666666-6666-6666-6666-666666666661",
+        subject="participant-1",
+        token_jti="77777777-7777-7777-7777-777777777771",
+        device_id="device-1",
+    )
+    second_scope = _camera_scope(
+        camera_id="22222222-2222-2222-2222-222222222222",
+        camera_claim_id="66666666-6666-6666-6666-666666666662",
+        subject="participant-2",
+        token_jti="77777777-7777-7777-7777-777777777772",
+        device_id="device-2",
+    )
+    try:
+        first = ingest_frame(
+            db,
+            device_id="device-1",
+            timestamp_ms=1000,
+            image_bytes=b"camera-1-frame",
+            sequence=1,
+            session_id="source-1",
+            camera_stream_id=first_scope.camera_id,
+            authorization_scope=first_scope,
+            capture_metadata={"width": 1920, "height": 1080},
+            state=StreamState(),
+            relay_service=ProcessingRelayService(),
+            frame_set_relay_service=ProcessingFrameSetRelayService(),
+            sync_service=sync_service,
+            relay_mode="off",
+        )
+        second = ingest_frame(
+            db,
+            device_id="device-2",
+            timestamp_ms=1005,
+            image_bytes=b"camera-2-frame",
+            sequence=1,
+            session_id="source-2",
+            camera_stream_id=second_scope.camera_id,
+            authorization_scope=second_scope,
+            capture_metadata={"width": 1920, "height": 1080},
+            state=StreamState(),
+            relay_service=ProcessingRelayService(),
+            frame_set_relay_service=ProcessingFrameSetRelayService(),
+            sync_service=sync_service,
+            relay_mode="off",
+        )
+
+        assert first["synchronized_frame_set"] is None
+        frame_set = second["synchronized_frame_set"]
+        assert frame_set is not None
+        assert frame_set.capture_session_id == first_scope.capture_session_id
+        assert frame_set.processing_job_id == first_scope.processing_job_id
+        assert frame_set.authorized_subject is None
+        assert frame_set.session_token_jti is None
+
+        manifest = db.query(FrameSetManifest).one()
+        members = db.query(FrameSetMember).order_by(
+            FrameSetMember.authorized_camera_id
+        ).all()
+        payload = json.loads(manifest.manifest_json)
+        assert manifest.authorized_subject is None
+        assert manifest.session_token_jti is None
+        assert [member.camera_claim_id for member in members] == [
+            first_scope.camera_claim_id,
+            second_scope.camera_claim_id,
+        ]
+        assert [member.authorized_subject for member in members] == [
+            first_scope.authorized_subject,
+            second_scope.authorized_subject,
+        ]
+        assert [member.session_token_jti for member in members] == [
+            first_scope.token_jti,
+            second_scope.token_jti,
+        ]
+        assert payload["authorization"]["processing_job_id"] == (
+            first_scope.processing_job_id
+        )
+        assert payload["authorization"]["authorized_subject"] is None
+        assert {
+            member["camera_claim_id"] for member in payload["members"]
+        } == {first_scope.camera_claim_id, second_scope.camera_claim_id}
+    finally:
+        db.close()
+
+
 def _main_scope(*, camera_id):
     return AuthorizedSessionScope(
         tenant_id="22222222-2222-2222-2222-222222222222",
@@ -420,5 +520,29 @@ def _main_scope(*, camera_id):
         profile_digest="a" * 64,
         authorized_subject="user-123",
         token_jti="55555555-5555-5555-5555-555555555555",
+        expires_at=2_000_000_000,
+    )
+
+
+def _camera_scope(
+    *,
+    camera_id,
+    camera_claim_id,
+    subject,
+    token_jti,
+    device_id,
+):
+    return AuthorizedCameraIngestScope(
+        tenant_id="22222222-2222-2222-2222-222222222222",
+        site_id="33333333-3333-3333-3333-333333333333",
+        capture_session_id="44444444-4444-4444-4444-444444444444",
+        processing_job_id="55555555-5555-5555-5555-555555555555",
+        profile_digest="a" * 64,
+        camera_claim_id=camera_claim_id,
+        camera_id=camera_id,
+        device_id=device_id,
+        authorized_subject=subject,
+        token_jti=token_jti,
+        issued_at=1_000,
         expires_at=2_000_000_000,
     )

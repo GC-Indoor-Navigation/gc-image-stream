@@ -436,15 +436,13 @@ def _resolve_capture_identity(
         for frame in frames.values()
     ):
         return IDENTITY_MODE_LEGACY, None, None, None
-    authorization_keys = {
+    authorization_group_keys = {
         (
             frame.tenant_id,
             frame.site_id,
             frame.capture_session_id,
             frame.processing_job_id,
             frame.profile_digest,
-            frame.authorized_subject,
-            frame.session_token_jti,
         )
         for frame in frames.values()
         if any(
@@ -460,8 +458,8 @@ def _resolve_capture_identity(
             )
         )
     }
-    if authorization_keys:
-        if len(authorization_keys) != 1 or any(
+    if authorization_group_keys:
+        if len(authorization_group_keys) != 1 or any(
             not all(
                 (
                     frame.tenant_id,
@@ -482,7 +480,26 @@ def _resolve_capture_identity(
         ]
         if len(set(authorized_camera_ids)) != len(authorized_camera_ids):
             raise FrameScopeConflict("authorized camera was reused across frame set")
-        authorization_key = next(iter(authorization_keys))
+        group_key = next(iter(authorization_group_keys))
+        participant_keys = {
+            (frame.authorized_subject, frame.session_token_jti)
+            for frame in frames.values()
+        }
+        member_scoped_credentials = any(
+            frame.camera_claim_id for frame in frames.values()
+        )
+        if member_scoped_credentials and any(
+            not frame.camera_claim_id for frame in frames.values()
+        ):
+            raise FrameScopeConflict(
+                "camera credential scope conflict across frame set"
+            )
+        common_participant = (
+            next(iter(participant_keys))
+            if len(participant_keys) == 1 and not member_scoped_credentials
+            else (None, None)
+        )
+        authorization_key = (*group_key, *common_participant)
         capture_session_id = authorization_key[2]
     else:
         authorization_key = None
@@ -555,6 +572,9 @@ def _build_manifest_payload(
                 "content_digest": frame.content_digest,
                 "capture_config_digest": frame.capture_config_digest,
                 "authorized_camera_id": frame.authorized_camera_id,
+                "camera_claim_id": frame.camera_claim_id,
+                "authorized_subject": frame.authorized_subject,
+                "session_token_jti": frame.session_token_jti,
                 "capture_metadata_json": (
                     frame.capture_metadata_json
                     if frame.capture_metadata_json is not None
