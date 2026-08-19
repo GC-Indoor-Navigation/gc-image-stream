@@ -243,6 +243,13 @@ class ActiveCameraIngestCredentialStore:
                 raise SessionTokenError("active camera ingest credential is expired")
             return credential
 
+    def assert_current(self, scope: AuthorizedCameraIngestScope) -> None:
+        credential = self.resolve(scope.processing_job_id, scope.camera_id)
+        if credential.scope != scope:
+            raise SessionTokenError(
+                "camera ingest credential has been replaced"
+            )
+
     def revoke(self, processing_job_id: str, camera_id: str) -> bool:
         with self._lock:
             return self._credentials.pop(
@@ -485,6 +492,52 @@ class CameraIngestCredentialVerifier:
             raise SessionTokenError("camera ingest credential is expired")
         if self.status_cache is not None:
             self.status_cache.assert_active(scope.processing_job_id)
+
+
+class VersionedIngestCredentialVerifier:
+    def __init__(
+        self,
+        *,
+        legacy: SessionTokenVerifier | None = None,
+        camera_ingest: CameraIngestCredentialVerifier | None = None,
+    ):
+        if legacy is None and camera_ingest is None:
+            raise ValueError("at least one ingest credential verifier is required")
+        self.legacy = legacy
+        self.camera_ingest = camera_ingest
+
+    def verify(self, token: str):
+        try:
+            unverified = jwt.decode(
+                token,
+                options={
+                    "verify_signature": False,
+                    "verify_aud": False,
+                    "verify_exp": False,
+                    "verify_iat": False,
+                    "verify_nbf": False,
+                },
+            )
+        except jwt.PyJWTError as exc:
+            raise SessionTokenError("ingest credential is malformed") from exc
+        credential_kind = unverified.get("credential_kind")
+        if credential_kind is not None:
+            if credential_kind != "CAMERA_INGEST" or self.camera_ingest is None:
+                raise SessionTokenError("unsupported ingest credential kind")
+            return self.camera_ingest.verify(token)
+        if self.legacy is None:
+            raise SessionTokenError("legacy session credential is disabled")
+        return self.legacy.verify(token)
+
+    def assert_active(self, scope) -> None:
+        if isinstance(scope, AuthorizedCameraIngestScope):
+            if self.camera_ingest is None:
+                raise SessionTokenError("camera ingest credential is disabled")
+            self.camera_ingest.assert_active(scope)
+            return
+        if self.legacy is None:
+            raise SessionTokenError("legacy session credential is disabled")
+        self.legacy.assert_active(scope)
 
 
 def extract_bearer_token(context) -> str:

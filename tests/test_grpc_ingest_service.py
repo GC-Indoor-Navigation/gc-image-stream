@@ -20,7 +20,11 @@ from app.services.stream import (
     configure_stream_experiment_recorder,
 )
 from app.services.stream.state import StreamState
-from app.services.session_identity import AuthorizedSessionScope
+from app.services.session_identity import (
+    ActiveCameraIngestCredentialStore,
+    AuthorizedCameraIngestScope,
+    AuthorizedSessionScope,
+)
 
 
 def test_frame_packet_round_trip_preserves_metadata_and_bytes():
@@ -842,6 +846,74 @@ def test_authenticated_ingest_rejects_missing_credentials_before_iteration(
     assert raised.value.code.name == "UNAUTHENTICATED"
 
 
+def test_camera_credential_binds_grpc_stream_to_camera_and_device(
+    session_factory,
+):
+    scope = _authorized_camera_scope()
+    captured_calls = []
+    camera_store = ActiveCameraIngestCredentialStore(now=lambda: 1_000)
+
+    def fake_ingest(db, **kwargs):
+        captured_calls.append(kwargs)
+        return {
+            "frame": Frame(
+                id=1,
+                device_id=kwargs["device_id"],
+                timestamp=kwargs["timestamp_ms"],
+                file_path=None,
+            )
+        }
+
+    service = GrpcIngestService(
+        db_factory=session_factory,
+        ingest_func=fake_ingest,
+        camera_credential_store=camera_store,
+    )
+    service.configure(
+        bind="127.0.0.1:0",
+        session_token_verifier=_FakeVerifier(scope),
+    )
+
+    response = service._stream_frames(
+        iter([_scoped_packet(scope.camera_id, scope)]),
+        _FakeContext("Bearer signed-token"),
+    )
+
+    assert response.received_frames == 1
+    assert captured_calls[0]["authorization_scope"] == scope
+    assert camera_store.resolve(
+        scope.processing_job_id,
+        scope.camera_id,
+    ).token == "signed-token"
+
+
+def test_camera_credential_rejects_device_substitution_before_storage(
+    session_factory,
+):
+    scope = _authorized_camera_scope(device_id="registered-device")
+    captured_calls = []
+    service = GrpcIngestService(
+        db_factory=session_factory,
+        ingest_func=lambda db, **kwargs: captured_calls.append(kwargs),
+        camera_credential_store=ActiveCameraIngestCredentialStore(
+            now=lambda: 1_000
+        ),
+    )
+    service.configure(
+        bind="127.0.0.1:0",
+        session_token_verifier=_FakeVerifier(scope),
+    )
+
+    with pytest.raises(_Aborted) as raised:
+        service._stream_frames(
+            iter([_scoped_packet(scope.camera_id, scope)]),
+            _FakeContext("Bearer signed-token"),
+        )
+
+    assert raised.value.code.name == "PERMISSION_DENIED"
+    assert captured_calls == []
+
+
 class _FakeVerifier:
     def __init__(self, scope):
         self.scope = scope
@@ -883,6 +955,23 @@ def _authorized_scope(camera_id):
         profile_digest="a" * 64,
         authorized_subject="user-123",
         token_jti="55555555-5555-5555-5555-555555555555",
+        expires_at=2_000_000_000,
+    )
+
+
+def _authorized_camera_scope(device_id="android-1"):
+    return AuthorizedCameraIngestScope(
+        tenant_id="22222222-2222-2222-2222-222222222222",
+        site_id="33333333-3333-3333-3333-333333333333",
+        capture_session_id="44444444-4444-4444-4444-444444444444",
+        processing_job_id="55555555-5555-5555-5555-555555555555",
+        profile_digest="a" * 64,
+        camera_claim_id="66666666-6666-6666-6666-666666666666",
+        camera_id="11111111-1111-1111-1111-111111111111",
+        device_id=device_id,
+        authorized_subject="participant-123",
+        token_jti="77777777-7777-7777-7777-777777777777",
+        issued_at=900,
         expires_at=2_000_000_000,
     )
 

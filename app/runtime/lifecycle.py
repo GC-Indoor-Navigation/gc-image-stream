@@ -28,6 +28,8 @@ from app.core.server import (
     STREAM_SYNC_RECENT_LIMIT,
     STREAM_SYNC_WINDOW_MS,
     STREAM_SESSION_AUTH_ENABLED,
+    STREAM_CAMERA_INGEST_AUTH_ENABLED,
+    STREAM_CAMERA_INGEST_TOKEN_AUDIENCE,
     STREAM_SESSION_JWKS_URL,
     STREAM_SESSION_TOKEN_AUDIENCE,
     STREAM_SESSION_TOKEN_ISSUER,
@@ -52,9 +54,11 @@ from app.services.stream.stream_experiment import (
 )
 from app.services.sync import stream_sync_service
 from app.services.session_identity import (
+    CameraIngestCredentialVerifier,
     JwksKeyCache,
     SessionStatusCache,
     SessionTokenVerifier,
+    VersionedIngestCredentialVerifier,
 )
 
 
@@ -233,18 +237,35 @@ async def startup_application():
         logger.info(format_log_event("stream_relay_v2_shadow_disabled"))
 
     if grpc_ingest_enabled:
-        session_token_verifier = (
-            SessionTokenVerifier(
-                issuer=STREAM_SESSION_TOKEN_ISSUER,
-                audience=STREAM_SESSION_TOKEN_AUDIENCE,
-                key_cache=JwksKeyCache(STREAM_SESSION_JWKS_URL),
-                status_cache=SessionStatusCache(
-                    STREAM_SESSION_STATUS_URL_TEMPLATE
-                ),
+        if STREAM_SESSION_AUTH_ENABLED or STREAM_CAMERA_INGEST_AUTH_ENABLED:
+            key_cache = JwksKeyCache(STREAM_SESSION_JWKS_URL)
+            status_cache = SessionStatusCache(STREAM_SESSION_STATUS_URL_TEMPLATE)
+            legacy_verifier = (
+                SessionTokenVerifier(
+                    issuer=STREAM_SESSION_TOKEN_ISSUER,
+                    audience=STREAM_SESSION_TOKEN_AUDIENCE,
+                    key_cache=key_cache,
+                    status_cache=status_cache,
+                )
+                if STREAM_SESSION_AUTH_ENABLED
+                else None
             )
-            if STREAM_SESSION_AUTH_ENABLED
-            else None
-        )
+            camera_ingest_verifier = (
+                CameraIngestCredentialVerifier(
+                    issuer=STREAM_SESSION_TOKEN_ISSUER,
+                    audience=STREAM_CAMERA_INGEST_TOKEN_AUDIENCE,
+                    key_cache=key_cache,
+                    status_cache=status_cache,
+                )
+                if STREAM_CAMERA_INGEST_AUTH_ENABLED
+                else None
+            )
+            session_token_verifier = VersionedIngestCredentialVerifier(
+                legacy=legacy_verifier,
+                camera_ingest=camera_ingest_verifier,
+            )
+        else:
+            session_token_verifier = None
         grpc_ingest_service.configure(
             bind=GRPC_INGEST_BIND,
             enabled=True,

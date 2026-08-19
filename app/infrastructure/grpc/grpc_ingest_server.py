@@ -17,9 +17,12 @@ from app.services.ingest.ingest_pipeline import ingest_frame
 from app.services.stream.stream_experiment import get_stream_experiment_recorder
 from app.services.stream.state import stream_state
 from app.services.session_identity import (
+    ActiveCameraIngestCredentialStore,
     SessionTokenError,
     SessionTokenVerifier,
+    AuthorizedCameraIngestScope,
     ActiveSessionCredentialStore,
+    active_camera_ingest_credentials,
     active_session_credentials,
     extract_bearer_token,
 )
@@ -94,6 +97,9 @@ class GrpcIngestService:
         state=stream_state,
         relay_service=processing_relay_service,
         credential_store: ActiveSessionCredentialStore = active_session_credentials,
+        camera_credential_store: ActiveCameraIngestCredentialStore = (
+            active_camera_ingest_credentials
+        ),
     ):
         self.bind = ""
         self.enabled = False
@@ -122,6 +128,7 @@ class GrpcIngestService:
         self.relay_service = relay_service
         self.session_token_verifier: SessionTokenVerifier | None = None
         self.credential_store = credential_store
+        self.camera_credential_store = camera_credential_store
 
     def configure(
         self,
@@ -356,7 +363,13 @@ class GrpcIngestService:
             try:
                 session_token = extract_bearer_token(context)
                 authorization_scope = self.session_token_verifier.verify(session_token)
-                self.credential_store.register(session_token, authorization_scope)
+                if isinstance(authorization_scope, AuthorizedCameraIngestScope):
+                    self.camera_credential_store.register(
+                        session_token,
+                        authorization_scope,
+                    )
+                else:
+                    self.credential_store.register(session_token, authorization_scope)
             except SessionTokenError:
                 return _abort_ingest(
                     context,
@@ -371,6 +384,13 @@ class GrpcIngestService:
                         self.session_token_verifier.assert_active(
                             authorization_scope
                         )
+                        if isinstance(
+                            authorization_scope,
+                            AuthorizedCameraIngestScope,
+                        ):
+                            self.camera_credential_store.assert_current(
+                                authorization_scope
+                            )
                     except SessionTokenError:
                         return _abort_ingest(
                             context,
@@ -408,6 +428,7 @@ class GrpcIngestService:
                     or not authorization_scope.matches_declared_scope(
                         request.session_scope,
                         camera_id=camera_id,
+                        device_id=metadata.device_id or None,
                     )
                 ):
                     return _abort_ingest(

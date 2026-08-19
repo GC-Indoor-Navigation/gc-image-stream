@@ -11,6 +11,7 @@ from app.services.session_identity import (
     CameraIngestCredentialVerifier,
     JwksKeyCache,
     SessionTokenError,
+    VersionedIngestCredentialVerifier,
 )
 
 
@@ -145,6 +146,36 @@ def test_camera_store_allows_refresh_but_rejects_claim_replacement(
         store.register("replacement", replacement)
 
 
+def test_versioned_router_keeps_legacy_and_camera_contracts_separate():
+    legacy_scope = object()
+    camera_scope = object()
+    legacy = _RecordingVerifier(legacy_scope)
+    camera = _RecordingVerifier(camera_scope)
+    router = VersionedIngestCredentialVerifier(
+        legacy=legacy,
+        camera_ingest=camera,
+    )
+    legacy_token = jwt.encode({"mode": "LIVE"}, "test-secret", algorithm="HS256")
+    camera_token = jwt.encode(
+        {"credential_kind": "CAMERA_INGEST"},
+        "test-secret",
+        algorithm="HS256",
+    )
+
+    assert router.verify(legacy_token) is legacy_scope
+    assert router.verify(camera_token) is camera_scope
+    assert legacy.tokens == [legacy_token]
+    assert camera.tokens == [camera_token]
+
+    unsupported = jwt.encode(
+        {"credential_kind": "PROCESSING_RELAY"},
+        "test-secret",
+        algorithm="HS256",
+    )
+    with pytest.raises(SessionTokenError, match="unsupported"):
+        router.verify(unsupported)
+
+
 def _verifier(jwk):
     return CameraIngestCredentialVerifier(
         issuer=ISSUER,
@@ -188,3 +219,16 @@ def _token(private_key, **override):
 def _b64uint(value: int) -> str:
     payload = value.to_bytes((value.bit_length() + 7) // 8, "big")
     return base64.urlsafe_b64encode(payload).rstrip(b"=").decode("ascii")
+
+
+class _RecordingVerifier:
+    def __init__(self, scope):
+        self.scope = scope
+        self.tokens = []
+
+    def verify(self, token):
+        self.tokens.append(token)
+        return self.scope
+
+    def assert_active(self, scope):
+        assert scope is self.scope

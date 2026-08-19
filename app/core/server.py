@@ -23,16 +23,24 @@ STREAM_SESSION_AUTH_ENABLED = get_optional_bool_env(
     "STREAM_SESSION_AUTH_ENABLED",
     False,
 )
+STREAM_CAMERA_INGEST_AUTH_ENABLED = get_optional_bool_env(
+    "STREAM_CAMERA_INGEST_AUTH_ENABLED",
+    False,
+)
 STREAM_SESSION_JWKS_URL = get_optional_str_env("STREAM_SESSION_JWKS_URL")
 STREAM_SESSION_TOKEN_ISSUER = get_optional_str_env("STREAM_SESSION_TOKEN_ISSUER")
 STREAM_SESSION_TOKEN_AUDIENCE = get_optional_str_env(
     "STREAM_SESSION_TOKEN_AUDIENCE",
     "gc-data-plane",
 )
+STREAM_CAMERA_INGEST_TOKEN_AUDIENCE = get_optional_str_env(
+    "STREAM_CAMERA_INGEST_TOKEN_AUDIENCE",
+    "gc-stream-ingest",
+)
 STREAM_SESSION_STATUS_URL_TEMPLATE = get_optional_str_env(
     "STREAM_SESSION_STATUS_URL_TEMPLATE"
 )
-if STREAM_SESSION_AUTH_ENABLED and not (
+if (STREAM_SESSION_AUTH_ENABLED or STREAM_CAMERA_INGEST_AUTH_ENABLED) and not (
     STREAM_SESSION_JWKS_URL
     and STREAM_SESSION_TOKEN_ISSUER
     and STREAM_SESSION_STATUS_URL_TEMPLATE
@@ -40,7 +48,7 @@ if STREAM_SESSION_AUTH_ENABLED and not (
     raise RuntimeError(
         "STREAM_SESSION_JWKS_URL, STREAM_SESSION_TOKEN_ISSUER, and "
         "STREAM_SESSION_STATUS_URL_TEMPLATE are required "
-        "when session authentication is enabled"
+        "when ingest authentication is enabled"
     )
 _legacy_stream_relay_enabled = get_optional_bool_env("STREAM_RELAY_ENABLED", False)
 _legacy_stream_frame_set_relay_enabled = get_optional_bool_env(
