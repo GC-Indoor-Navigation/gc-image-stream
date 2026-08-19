@@ -133,5 +133,6 @@ live under `docs/`.
 - Design: `docs/design/`
 - Experiments: `docs/experiments/`
 - Operations: `docs/operations/`
+- Implementation notes: `docs/implementation/`
 
 See [`docs/README.md`](docs/README.md) for the local docs index.

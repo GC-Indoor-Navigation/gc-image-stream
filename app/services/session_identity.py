@@ -10,7 +10,7 @@ import jwt
 
 
 PROFILE_DIGEST_PATTERN = re.compile(r"^[0-9a-f]{64}$")
-REQUIRED_CLAIMS = (
+LEGACY_REQUIRED_CLAIMS = (
     "iss",
     "aud",
     "sub",
@@ -21,6 +21,25 @@ REQUIRED_CLAIMS = (
     "camera_ids",
     "profile_digest",
     "mode",
+    "iat",
+    "nbf",
+    "exp",
+    "jti",
+)
+
+CAMERA_INGEST_REQUIRED_CLAIMS = (
+    "iss",
+    "aud",
+    "sub",
+    "credential_kind",
+    "tenant_id",
+    "site_id",
+    "capture_session_id",
+    "processing_job_id",
+    "profile_digest",
+    "camera_claim_id",
+    "camera_id",
+    "device_id",
     "iat",
     "nbf",
     "exp",
@@ -44,7 +63,13 @@ class AuthorizedSessionScope:
     token_jti: str
     expires_at: int
 
-    def matches_declared_scope(self, declared, *, camera_id: str) -> bool:
+    def matches_declared_scope(
+        self,
+        declared,
+        *,
+        camera_id: str,
+        device_id: str | None = None,
+    ) -> bool:
         return (
             declared.tenant_id == self.tenant_id
             and declared.site_id == self.site_id
@@ -52,6 +77,43 @@ class AuthorizedSessionScope:
             and declared.processing_job_id == self.processing_job_id
             and declared.profile_digest == self.profile_digest
             and camera_id in self.camera_ids
+        )
+
+
+@dataclass(frozen=True)
+class AuthorizedCameraIngestScope:
+    tenant_id: str
+    site_id: str
+    capture_session_id: str
+    processing_job_id: str
+    profile_digest: str
+    camera_claim_id: str
+    camera_id: str
+    device_id: str
+    authorized_subject: str
+    token_jti: str
+    issued_at: int
+    expires_at: int
+
+    @property
+    def camera_ids(self) -> frozenset[str]:
+        return frozenset({self.camera_id})
+
+    def matches_declared_scope(
+        self,
+        declared,
+        *,
+        camera_id: str,
+        device_id: str | None = None,
+    ) -> bool:
+        return (
+            declared.tenant_id == self.tenant_id
+            and declared.site_id == self.site_id
+            and declared.capture_session_id == self.capture_session_id
+            and declared.processing_job_id == self.processing_job_id
+            and declared.profile_digest == self.profile_digest
+            and camera_id == self.camera_id
+            and device_id == self.device_id
         )
 
 
@@ -126,6 +188,66 @@ class ActiveSessionCredentialStore:
     def revoke(self, processing_job_id: str) -> bool:
         with self._lock:
             return self._credentials.pop(processing_job_id, None) is not None
+
+    def clear(self) -> None:
+        with self._lock:
+            self._credentials.clear()
+
+
+class ActiveCameraIngestCredentialStore:
+    def __init__(self, *, now: Callable[[], float] = time.time):
+        self.now = now
+        self._credentials: dict[
+            tuple[str, str], ActiveSessionCredential
+        ] = {}
+        self._lock = RLock()
+
+    def register(
+        self,
+        token: str,
+        scope: AuthorizedCameraIngestScope,
+    ) -> ActiveSessionCredential:
+        if not token:
+            raise SessionTokenError("camera ingest credential is required")
+        if scope.expires_at <= int(self.now()):
+            raise SessionTokenError("camera ingest credential is expired")
+        key = (scope.processing_job_id, scope.camera_id)
+        credential = ActiveSessionCredential(token=token, scope=scope)
+        with self._lock:
+            existing = self._credentials.get(key)
+            if existing is not None:
+                existing_scope = existing.scope
+                if existing_scope.camera_claim_id != scope.camera_claim_id:
+                    raise SessionTokenError(
+                        "active camera claim cannot be replaced"
+                    )
+                if existing_scope.issued_at > scope.issued_at:
+                    raise SessionTokenError(
+                        "older camera ingest credential cannot replace a newer one"
+                    )
+            self._credentials[key] = credential
+        return credential
+
+    def resolve(
+        self,
+        processing_job_id: str,
+        camera_id: str,
+    ) -> ActiveSessionCredential:
+        key = (processing_job_id, camera_id)
+        with self._lock:
+            credential = self._credentials.get(key)
+            if credential is None:
+                raise SessionTokenError("active camera ingest credential is unavailable")
+            if credential.scope.expires_at <= int(self.now()):
+                self._credentials.pop(key, None)
+                raise SessionTokenError("active camera ingest credential is expired")
+            return credential
+
+    def revoke(self, processing_job_id: str, camera_id: str) -> bool:
+        with self._lock:
+            return self._credentials.pop(
+                (processing_job_id, camera_id), None
+            ) is not None
 
     def clear(self) -> None:
         with self._lock:
@@ -290,7 +412,7 @@ class SessionTokenVerifier:
                 issuer=self.issuer,
                 audience=self.audience,
                 leeway=self.leeway_sec,
-                options={"require": list(REQUIRED_CLAIMS)},
+                options={"require": list(LEGACY_REQUIRED_CLAIMS)},
             )
             scope = _scope_from_claims(claims)
             self.assert_active(scope)
@@ -303,6 +425,64 @@ class SessionTokenVerifier:
     def assert_active(self, scope: AuthorizedSessionScope) -> None:
         if scope.expires_at <= int(self.now()):
             raise SessionTokenError("session token is expired")
+        if self.status_cache is not None:
+            self.status_cache.assert_active(scope.processing_job_id)
+
+
+class CameraIngestCredentialVerifier:
+    def __init__(
+        self,
+        *,
+        issuer: str,
+        audience: str,
+        key_cache: JwksKeyCache,
+        leeway_sec: int = 5,
+        status_cache: SessionStatusCache | None = None,
+        now: Callable[[], float] = time.time,
+    ):
+        if not issuer or not audience:
+            raise ValueError("issuer and audience are required")
+        if leeway_sec < 0:
+            raise ValueError("leeway_sec must be nonnegative")
+        self.issuer = issuer
+        self.audience = audience
+        self.key_cache = key_cache
+        self.leeway_sec = leeway_sec
+        self.status_cache = status_cache
+        self.now = now
+
+    def verify(self, token: str) -> AuthorizedCameraIngestScope:
+        if not token:
+            raise SessionTokenError("camera ingest credential is required")
+        try:
+            header = jwt.get_unverified_header(token)
+            if header.get("alg") != "RS256":
+                raise SessionTokenError(
+                    "camera ingest credential algorithm must be RS256"
+                )
+            key = self.key_cache.resolve(str(header.get("kid") or ""))
+            claims = jwt.decode(
+                token,
+                key=key.key,
+                algorithms=["RS256"],
+                issuer=self.issuer,
+                audience=self.audience,
+                leeway=self.leeway_sec,
+                options={"require": list(CAMERA_INGEST_REQUIRED_CLAIMS)},
+            )
+            scope = _camera_ingest_scope_from_claims(claims)
+            self.assert_active(scope)
+            return scope
+        except SessionTokenError:
+            raise
+        except jwt.PyJWTError as exc:
+            raise SessionTokenError(
+                "camera ingest credential validation failed"
+            ) from exc
+
+    def assert_active(self, scope: AuthorizedCameraIngestScope) -> None:
+        if scope.expires_at <= int(self.now()):
+            raise SessionTokenError("camera ingest credential is expired")
         if self.status_cache is not None:
             self.status_cache.assert_active(scope.processing_job_id)
 
@@ -364,6 +544,44 @@ def _scope_from_claims(claims: Mapping) -> AuthorizedSessionScope:
     )
 
 
+def _camera_ingest_scope_from_claims(
+    claims: Mapping,
+) -> AuthorizedCameraIngestScope:
+    if claims.get("credential_kind") != "CAMERA_INGEST":
+        raise SessionTokenError("credential_kind must be CAMERA_INGEST")
+    profile_digest = claims.get("profile_digest")
+    if not isinstance(profile_digest, str) or not PROFILE_DIGEST_PATTERN.fullmatch(
+        profile_digest
+    ):
+        raise SessionTokenError("profile_digest must be a lowercase SHA-256 digest")
+    subject = _required_text_claim(claims.get("sub"), "sub")
+    device_id = _required_text_claim(claims.get("device_id"), "device_id")
+    issued_at = claims.get("iat")
+    expires_at = claims.get("exp")
+    if not isinstance(issued_at, int):
+        raise SessionTokenError("iat must be an integer timestamp")
+    if not isinstance(expires_at, int):
+        raise SessionTokenError("exp must be an integer timestamp")
+    return AuthorizedCameraIngestScope(
+        tenant_id=_canonical_uuid(claims.get("tenant_id"), "tenant_id"),
+        site_id=_canonical_uuid(claims.get("site_id"), "site_id"),
+        capture_session_id=_canonical_uuid(
+            claims.get("capture_session_id"), "capture_session_id"
+        ),
+        processing_job_id=_canonical_uuid(
+            claims.get("processing_job_id"), "processing_job_id"
+        ),
+        profile_digest=profile_digest,
+        camera_claim_id=_canonical_uuid(
+            claims.get("camera_claim_id"), "camera_claim_id"
+        ),
+        camera_id=_canonical_uuid(claims.get("camera_id"), "camera_id"),
+        device_id=device_id,
+        authorized_subject=subject,
+        token_jti=_canonical_uuid(claims.get("jti"), "jti"),
+        issued_at=issued_at,
+        expires_at=expires_at,
+    )
 def _canonical_uuid(value, claim_name: str) -> str:
     if not isinstance(value, str):
         raise SessionTokenError(f"{claim_name} must be a UUID string")
@@ -376,4 +594,13 @@ def _canonical_uuid(value, claim_name: str) -> str:
     return normalized
 
 
+def _required_text_claim(value, claim_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise SessionTokenError(f"{claim_name} must be non-empty")
+    if value != value.strip():
+        raise SessionTokenError(f"{claim_name} must not contain outer whitespace")
+    return value
+
+
 active_session_credentials = ActiveSessionCredentialStore()
+active_camera_ingest_credentials = ActiveCameraIngestCredentialStore()
