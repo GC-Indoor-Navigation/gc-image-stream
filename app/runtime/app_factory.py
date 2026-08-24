@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from app.api.routes.capture import router as capture_router
 from app.api.routes.debug import router as debug_router
 from app.api.routes.frames import router as frames_router
+from app.api.routes.health import router as health_router
 from app.api.routes.internal import router as internal_router
 from app.api.routes.monitoring import router as monitoring_router
 from app.api.routes.phone import router as phone_router
@@ -22,6 +23,7 @@ def create_app() -> FastAPI:
 
     app.include_router(capture_router)
     app.include_router(frames_router)
+    app.include_router(health_router)
     app.include_router(internal_router)
     app.include_router(phone_router)
     app.include_router(monitoring_router)
