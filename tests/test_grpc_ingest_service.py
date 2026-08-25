@@ -771,6 +771,36 @@ def test_grpc_ingest_service_keeps_device_active_until_all_streams_close():
     assert status["missing_device_ids"] == ["android_01"]
 
 
+def test_new_authorized_session_resets_stopped_collection_after_handoff():
+    service = GrpcIngestService()
+    service.configure(
+        bind="127.0.0.1:0",
+        enabled=True,
+        expected_device_ids=["android_01", "android_02"],
+    )
+
+    assert service._acquire_authorized_collection("capture-session-1") is True
+    service._mark_device_active("android_01")
+    service._mark_device_active("android_02")
+    assert service._allow_ingest("android_02", timestamp_ms=1_100) is False
+    service._mark_stream_closed({"android_01", "android_02"})
+
+    assert service.status()["collection_stopped"] is True
+    assert service._acquire_authorized_collection("capture-session-2") is False
+
+    service._release_authorized_collection("capture-session-1")
+    assert service._acquire_authorized_collection("capture-session-2") is True
+
+    status = service.status()
+    assert status["collection_capture_session_id"] == "capture-session-2"
+    assert status["active_authorized_stream_count"] == 1
+    assert status["collection_stopped"] is False
+    assert status["gate_open"] is False
+    assert status["observed_device_ids"] == []
+    assert status["latest_device_timestamp_ms"] == {}
+    assert status["pre_gate_dropped_count"] == 0
+
+
 def test_authenticated_ingest_binds_token_scope_before_storage(session_factory):
     camera_id = "11111111-1111-1111-1111-111111111111"
     scope = _authorized_scope(camera_id)
@@ -800,6 +830,10 @@ def test_authenticated_ingest_binds_token_scope_before_storage(session_factory):
     assert response.received_frames == 1
     assert len(captured_calls) == 1
     assert captured_calls[0]["authorization_scope"] == scope
+    assert service.status()["collection_capture_session_id"] == (
+        scope.capture_session_id
+    )
+    assert service.status()["active_authorized_stream_count"] == 0
 
 
 def test_authenticated_ingest_rejects_scope_substitution_before_storage(

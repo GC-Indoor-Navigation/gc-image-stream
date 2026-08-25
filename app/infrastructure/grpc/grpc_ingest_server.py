@@ -121,6 +121,8 @@ class GrpcIngestService:
         self.collection_started = False
         self.collection_stopped = False
         self.collection_stop_reason: str | None = None
+        self.collection_capture_session_id: str | None = None
+        self.active_authorized_stream_count = 0
         self.gate_lock = Lock()
         self.db_factory = db_factory
         self.ingest_func = ingest_func
@@ -168,6 +170,8 @@ class GrpcIngestService:
         self.collection_started = not self._gate_enabled()
         self.collection_stopped = False
         self.collection_stop_reason = None
+        self.collection_capture_session_id = None
+        self.active_authorized_stream_count = 0
         self.session_token_verifier = session_token_verifier
 
     def start(self):
@@ -229,7 +233,46 @@ class GrpcIngestService:
             "collection_started": self.collection_started,
             "collection_stopped": self.collection_stopped,
             "collection_stop_reason": self.collection_stop_reason,
+            "collection_capture_session_id": self.collection_capture_session_id,
+            "active_authorized_stream_count": self.active_authorized_stream_count,
         }
+
+    def _acquire_authorized_collection(self, capture_session_id: str) -> bool:
+        with self.gate_lock:
+            if self.collection_capture_session_id is None:
+                self.collection_capture_session_id = capture_session_id
+            elif self.collection_capture_session_id != capture_session_id:
+                if self.active_authorized_stream_count > 0:
+                    return False
+                self._reset_collection_locked()
+                self.collection_capture_session_id = capture_session_id
+            self.active_authorized_stream_count += 1
+            return True
+
+    def _release_authorized_collection(self, capture_session_id: str) -> None:
+        with self.gate_lock:
+            if self.collection_capture_session_id != capture_session_id:
+                return
+            self.active_authorized_stream_count = max(
+                0,
+                self.active_authorized_stream_count - 1,
+            )
+
+    def _reset_collection_locked(self) -> None:
+        self.gate_open = not self._gate_enabled()
+        self.observed_device_ids = set()
+        self.active_device_ids = set()
+        self.active_device_stream_counts = {}
+        self.stream_closed_at_ms = {}
+        self.latest_device_timestamp_ms = {}
+        self.gate_start_timestamp_ms = None
+        self.first_accepted_timestamp_ms = None
+        self.pre_gate_dropped_count = 0
+        self.stale_after_gate_dropped_count = 0
+        self.server_receive_sequence = 0
+        self.collection_started = not self._gate_enabled()
+        self.collection_stopped = False
+        self.collection_stop_reason = None
 
     def _gate_enabled(self) -> bool:
         return self.expected_device_count is not None
@@ -358,6 +401,7 @@ class GrpcIngestService:
         received_count = 0
         stream_device_ids: set[str] = set()
         authorization_scope = None
+        authorized_collection_acquired = False
 
         if self.session_token_verifier is not None:
             try:
@@ -370,6 +414,15 @@ class GrpcIngestService:
                     )
                 else:
                     self.credential_store.register(session_token, authorization_scope)
+                authorized_collection_acquired = self._acquire_authorized_collection(
+                    authorization_scope.capture_session_id
+                )
+                if not authorized_collection_acquired:
+                    return _abort_ingest(
+                        context,
+                        "FAILED_PRECONDITION",
+                        "another capture session owns the ingest collection",
+                    )
             except SessionTokenError:
                 return _abort_ingest(
                     context,
@@ -512,6 +565,10 @@ class GrpcIngestService:
                 received_count += 1
         finally:
             self._mark_stream_closed(stream_device_ids)
+            if authorized_collection_acquired:
+                self._release_authorized_collection(
+                    authorization_scope.capture_session_id
+                )
 
         return StreamFramesResponse(
             received_frames=received_count,
