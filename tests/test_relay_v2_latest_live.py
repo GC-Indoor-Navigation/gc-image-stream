@@ -121,6 +121,25 @@ def test_claims_only_newest_eligible_snapshot(session_factory):
         assert db.get(FrameSetDeliveryProjection, "newer").live_state == "OFFERED"
 
 
+def test_retires_unclaimed_manifest_for_inactive_session(session_factory):
+    _persist_candidate(
+        session_factory,
+        uid="inactive",
+        frame_set_id=1,
+        synchronized_at_ms=1000,
+    )
+    store = LatestLiveStore(session_factory)
+    snapshot = store.snapshot_for_hello()
+
+    assert snapshot is not None
+    assert store.retire_eligible(snapshot.key, updated_at_ms=1100) is True
+    assert store.snapshot_for_hello() is None
+    with session_factory() as db:
+        projection = db.get(FrameSetDeliveryProjection, "inactive")
+        assert projection.live_state == "SESSION_INACTIVE"
+        assert projection.last_reason == "RELAY_CREDENTIAL_SESSION_INACTIVE"
+
+
 def test_in_flight_identity_blocks_additional_claims(session_factory):
     _persist_candidate(
         session_factory,

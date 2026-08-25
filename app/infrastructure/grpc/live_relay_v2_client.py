@@ -33,7 +33,10 @@ from app.services.session_identity import (
     ActiveSessionCredentialStore,
     active_session_credentials,
 )
-from app.services.relay_credentials import ProcessingRelayScope
+from app.services.relay_credentials import (
+    ProcessingRelayScope,
+    RelayCredentialSessionInactive,
+)
 
 
 LOGGER = logging.getLogger("gc_image_stream.relay_v2")
@@ -213,9 +216,16 @@ class ProcessingLiveRelayV2Client:
         relay_scope = None
         if hello_snapshot.processing_job_id:
             if self._relay_credential_provider is not None:
-                credential = self._relay_credential_provider.resolve_for_claim(
-                    hello_snapshot
-                )
+                try:
+                    credential = self._relay_credential_provider.resolve_for_claim(
+                        hello_snapshot
+                    )
+                except RelayCredentialSessionInactive:
+                    store.retire_eligible(
+                        hello_snapshot.key,
+                        updated_at_ms=self._utc_now_ms(),
+                    )
+                    return None
                 relay_scope = credential.scope
             else:
                 credential = self._credential_store.resolve_for_claim(

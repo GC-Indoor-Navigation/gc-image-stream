@@ -329,6 +329,29 @@ class LatestLiveStore:
             updated_at_ms=updated_at_ms,
         )
 
+    def retire_eligible(
+        self,
+        key: FrameSetKey,
+        *,
+        state: str = "SESSION_INACTIVE",
+        reason: str = "RELAY_CREDENTIAL_SESSION_INACTIVE",
+        updated_at_ms: int | None = None,
+    ) -> bool:
+        """Terminally retire an unclaimed manifest rejected by its owner."""
+        timestamp_ms = updated_at_ms or int(time.time() * 1000)
+        with self._session_factory() as db:
+            manifest = db.get(FrameSetManifest, key.frame_set_uid)
+            if manifest is None or self._key(manifest) != key:
+                return False
+            projection = db.get(FrameSetDeliveryProjection, key.frame_set_uid)
+            if projection is None or projection.live_state != "ELIGIBLE":
+                return False
+            projection.live_state = state
+            projection.last_reason = reason
+            projection.updated_at_ms = timestamp_ms
+            db.commit()
+            return True
+
     def reconcile_not_found(
         self,
         key: FrameSetKey,

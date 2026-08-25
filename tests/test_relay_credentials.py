@@ -12,6 +12,7 @@ from app.services.relay_credentials import (
     ClientCredentialsTokenProvider,
     MainProcessingRelayCredentialProvider,
     ProcessingRelayCredentialVerifier,
+    RelayCredentialSessionInactive,
 )
 from app.services.session_identity import JwksKeyCache, SessionTokenError
 
@@ -164,6 +165,24 @@ def test_main_provider_fails_closed_when_one_time_header_is_missing(
     )
 
     with pytest.raises(SessionTokenError, match="one-time token"):
+        provider.resolve_for_claim(_claim())
+
+
+def test_main_provider_reports_inactive_processing_job_on_conflict(
+    signing_material,
+):
+    _, jwk = signing_material
+    provider = MainProcessingRelayCredentialProvider(
+        url_template=(
+            "https://main/internal/v1/tenants/{tenant_id}/processing-jobs/"
+            "{processing_job_id}/relay-credentials"
+        ),
+        access_tokens=_StaticAccessTokens(),
+        verifier=_verifier(jwk),
+        post=lambda *args, **kwargs: _response(409, {"code": "JOB_NOT_ACTIVE"}),
+    )
+
+    with pytest.raises(RelayCredentialSessionInactive, match="inactive"):
         provider.resolve_for_claim(_claim())
 
 

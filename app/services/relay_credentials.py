@@ -63,6 +63,10 @@ class ActiveProcessingRelayCredential:
     scope: ProcessingRelayScope
 
 
+class RelayCredentialSessionInactive(SessionTokenError):
+    """Main confirmed that the manifest's processing job is no longer active."""
+
+
 class ProcessingRelayCredentialVerifier:
     def __init__(
         self,
@@ -235,6 +239,8 @@ class MainProcessingRelayCredentialProvider:
             },
             timeout=self.timeout_sec,
         )
+        if response.status_code == 409:
+            raise RelayCredentialSessionInactive("processing job is inactive")
         response.raise_for_status()
         relay_token = response.headers.get("X-GC-Processing-Relay-Token")
         if not relay_token:

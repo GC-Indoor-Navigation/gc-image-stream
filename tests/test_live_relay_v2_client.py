@@ -25,6 +25,7 @@ from app.services.session_identity import (
 from app.services.relay_credentials import (
     ActiveProcessingRelayCredential,
     ProcessingRelayScope,
+    RelayCredentialSessionInactive,
 )
 
 
@@ -205,6 +206,40 @@ def test_empty_store_is_an_idle_poll_not_a_failed_connection(session_factory):
 
     assert client._run_connection() is None
     assert client.status()["reconnect_count"] == 0
+
+
+def test_inactive_job_retires_manifest_without_reconnect_backoff(
+    session_factory,
+    tmp_path,
+):
+    _persist_candidate(session_factory, tmp_path, authorized=True)
+
+    class InactiveCredentialProvider:
+        def resolve_for_claim(self, claim):
+            raise RelayCredentialSessionInactive("processing job is inactive")
+
+    client = ProcessingLiveRelayV2Client(
+        utc_now_ms=lambda: 10_100,
+        relay_credential_provider=InactiveCredentialProvider(),
+    )
+    client.configure(
+        target="processing:50053",
+        enabled=True,
+        session_factory=session_factory,
+        protocol_config=ProtocolConfig(
+            producer_session_id="producer-1",
+            processing_profile_digest="a" * 64,
+            producer_freshness_budget_ms=500,
+        ),
+        relay_credential_provider=InactiveCredentialProvider(),
+    )
+
+    assert client._run_connection() is None
+    assert client.status()["reconnect_count"] == 0
+    with session_factory() as db:
+        projection = db.get(FrameSetDeliveryProjection, "set-1")
+        assert projection.live_state == "SESSION_INACTIVE"
+        assert projection.last_reason == "RELAY_CREDENTIAL_SESSION_INACTIVE"
 
 
 def test_credit_sends_exactly_one_latest_payload(
