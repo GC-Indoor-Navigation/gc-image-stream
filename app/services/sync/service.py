@@ -130,9 +130,10 @@ class StreamSyncService:
                 archive_state=archive_state,
                 archive_error=archive_error,
             )
-            if frame_set is None or stored is None or self.matcher is None:
+            if stored is None or self.matcher is None:
                 return frame_set
-            return self.matcher.replace_frame_member(frame_set, stored)
+            updated = self.matcher.replace_recent_frame_member(stored)
+            return updated if updated is not None else frame_set
 
     def clear(self):
         self.configure(

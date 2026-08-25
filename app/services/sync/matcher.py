@@ -305,6 +305,18 @@ class SyncMatcher:
         self._replace_recent_frame_set(updated)
         return updated
 
+    def replace_recent_frame_member(
+        self,
+        frame: StoredSyncFrame,
+    ) -> SynchronizedFrameSet | None:
+        for frame_set in reversed(self._recent_frame_sets):
+            if any(
+                member.buffer_key == frame.buffer_key
+                for member in frame_set.frames.values()
+            ):
+                return self.replace_frame_member(frame_set, frame)
+        return None
+
     def _replace_recent_frame_set(self, updated: SynchronizedFrameSet) -> None:
         self._recent_frame_sets = deque(
             [

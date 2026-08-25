@@ -83,6 +83,60 @@ def test_concurrent_ingest_serializes_matcher_mutation():
     assert status["duplicate_count"] == 0
 
 
+def test_late_archive_completion_updates_already_matched_frame_set():
+    service = configured_service(("camera-1", "camera-2", "camera-3"))
+    frames = [
+        make_frame(
+            device_id=f"camera-{number}",
+            timestamp_ms=1000 + number,
+            sequence=1,
+            session_id=f"camera-{number}-session-a",
+        )
+        for number in range(1, 4)
+    ]
+
+    assert service.handle_frame(frames[0]) is None
+    assert service.handle_frame(frames[1]) is None
+    matched = service.handle_frame(frames[2])
+    assert matched is not None
+
+    after_trigger = service.finalize_frame_archive(
+        frames[2],
+        matched,
+        frame_id=3,
+        file_path="/archive/camera-3.jpg",
+        archive_state="ARCHIVE_DURABLE",
+        archive_error=None,
+    )
+    after_first = service.finalize_frame_archive(
+        frames[0],
+        None,
+        frame_id=1,
+        file_path="/archive/camera-1.jpg",
+        archive_state="ARCHIVE_DURABLE",
+        archive_error=None,
+    )
+    after_second = service.finalize_frame_archive(
+        frames[1],
+        None,
+        frame_id=2,
+        file_path="/archive/camera-2.jpg",
+        archive_state="ARCHIVE_DURABLE",
+        archive_error=None,
+    )
+
+    assert after_trigger is not None
+    assert after_first is not None
+    assert after_second is not None
+    assert after_trigger.frames["camera-1"].archive_state == "ARCHIVE_PENDING"
+    assert after_first.frames["camera-1"].archive_state == "ARCHIVE_DURABLE"
+    assert all(
+        member.archive_state == "ARCHIVE_DURABLE" and member.file_path
+        for member in after_second.frames.values()
+    )
+    assert service.recent_frame_sets()[-1] == after_second
+
+
 def test_new_service_restart_allocates_new_run_before_id_one():
     first_service = configured_service(("camera-1",))
     second_service = configured_service(("camera-1",))
