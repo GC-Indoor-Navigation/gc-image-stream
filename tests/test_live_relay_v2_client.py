@@ -194,6 +194,19 @@ def test_reconnect_backoff_is_bounded_and_jittered():
     assert backoff.delay(20, random_value=0.5) == pytest.approx(1.0)
 
 
+def test_empty_store_is_an_idle_poll_not_a_failed_connection(session_factory):
+    client = ProcessingLiveRelayV2Client()
+    client.configure(
+        target="processing:50053",
+        enabled=True,
+        session_factory=session_factory,
+        protocol_config=_config(),
+    )
+
+    assert client._run_connection() is None
+    assert client.status()["reconnect_count"] == 0
+
+
 def test_credit_sends_exactly_one_latest_payload(
     session_factory,
     tmp_path,

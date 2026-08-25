@@ -182,6 +182,9 @@ class ProcessingLiveRelayV2Client:
         while not self._stop_event.is_set():
             try:
                 connected = self._run_connection()
+                if connected is None:
+                    attempt = 0
+                    continue
                 if connected:
                     attempt = 0
             except PermanentRelayError as exc:
@@ -198,13 +201,13 @@ class ProcessingLiveRelayV2Client:
             attempt += 1
             self._stop_event.wait(delay)
 
-    def _run_connection(self) -> bool:
+    def _run_connection(self) -> bool | None:
         store = self._required_store()
         base_config = self._required_config()
         hello_snapshot = store.snapshot_for_hello()
         if hello_snapshot is None:
             self._stop_event.wait(0.05)
-            return False
+            return None
         config = bind_authorized_claim(base_config, hello_snapshot)
         credential = None
         relay_scope = None
