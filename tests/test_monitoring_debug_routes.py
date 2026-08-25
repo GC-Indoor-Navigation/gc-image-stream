@@ -162,8 +162,11 @@ def test_monitoring_relay_returns_relay_status(client):
     response = client.get("/monitoring/relay")
 
     assert response.status_code == 200
-    assert response.json()["enabled"] is True
-    assert response.json()["target"] == "127.0.0.1:50051"
+    body = response.json()
+    assert body["enabled"] is True
+    assert body["target"] == "127.0.0.1:50051"
+    assert body["relay_v2"]["contract_registered"] is True
+    assert "last_error" in body["relay_v2"]
 
 
 def test_monitoring_frame_set_relay_returns_relay_status(client):

@@ -6,6 +6,9 @@ from app.infrastructure.grpc.processing_relay_client import (
     processing_frame_set_relay_service,
     processing_relay_service,
 )
+from app.infrastructure.grpc.live_relay_v2_client import (
+    processing_live_relay_v2_client,
+)
 from app.models import Frame
 from app.services.stream.state import (
     CameraStreamState,
@@ -195,6 +198,7 @@ def get_relay_status():
     status = processing_relay_service.status()
     status["relay_mode"] = STREAM_RELAY_MODE
     status["selected"] = STREAM_RELAY_MODE == "raw"
+    status["relay_v2"] = processing_live_relay_v2_client.status()
     return status
 
 
