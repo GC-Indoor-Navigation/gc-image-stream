@@ -232,7 +232,8 @@ class ProcessingLiveRelayV2Client:
                 unresolved=store.unresolved_keys(),
                 proposed_processing_job_id=store.processing_job_for(
                     hello_snapshot.key.capture_run_id
-                ),
+                )
+                or hello_snapshot.processing_job_id,
                 measured_utc_ms=self._utc_now_ms(),
             )
         )

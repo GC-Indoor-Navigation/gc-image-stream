@@ -305,6 +305,7 @@ def test_authorized_relay_forwards_token_as_grpc_metadata(
     )
     assert observed["hello"].tenant_id == "tenant-1"
     assert observed["hello"].processing_profile_digest == "a" * 64
+    assert observed["hello"].proposed_processing_job_id == "job-1"
     assert observed["closed"] is True
 
 
@@ -358,6 +359,7 @@ def test_workload_relay_credential_replaces_participant_identity(
     )
     assert observed["hello"].authorized_subject == "coordinator-1"
     assert observed["hello"].session_token_jti == "relay-jti-1"
+    assert observed["hello"].proposed_processing_job_id == "job-1"
     assert provider.claims[0].authorized_subject == "user-1"
 
 
