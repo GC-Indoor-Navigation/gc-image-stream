@@ -8,6 +8,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app.services.session_identity import (
     ActiveCameraIngestCredentialStore,
+    CameraCredentialStatusCache,
     CameraIngestCredentialVerifier,
     JwksKeyCache,
     SessionTokenError,
@@ -57,6 +58,23 @@ def test_camera_ingest_verifier_accepts_exact_main_contract(signing_material):
     assert scope.camera_ids == frozenset({CAMERA_ID})
     assert scope.device_id == DEVICE_ID
     assert scope.token_jti == CREDENTIAL_ID
+
+
+def test_signed_but_revoked_camera_token_is_rejected_at_handshake(signing_material):
+    private_key, jwk = signing_material
+    verifier = _verifier(jwk)
+    verifier.credential_status_cache = CameraCredentialStatusCache(
+        "https://main/credential-status/{credential_id}",
+        fetcher=lambda credential_id: {
+            "credentialId": credential_id,
+            "processingJobId": PROCESSING_JOB_ID,
+            "credentialKind": "CAMERA_INGEST",
+            "known": True,
+            "active": False,
+        },
+    )
+    with pytest.raises(SessionTokenError, match="inactive"):
+        verifier.verify(_token(private_key))
 
 
 @pytest.mark.parametrize(

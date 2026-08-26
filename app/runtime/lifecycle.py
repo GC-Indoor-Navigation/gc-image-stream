@@ -38,6 +38,7 @@ from app.core.server import (
     STREAM_SESSION_AUTH_ENABLED,
     STREAM_CAMERA_INGEST_AUTH_ENABLED,
     STREAM_CAMERA_INGEST_TOKEN_AUDIENCE,
+    STREAM_CAMERA_CREDENTIAL_STATUS_URL_TEMPLATE,
     STREAM_SESSION_JWKS_URL,
     STREAM_SESSION_TOKEN_AUDIENCE,
     STREAM_SESSION_TOKEN_ISSUER,
@@ -62,6 +63,7 @@ from app.services.stream.stream_experiment import (
 )
 from app.services.sync import stream_sync_service
 from app.services.session_identity import (
+    CameraCredentialStatusCache,
     CameraIngestCredentialVerifier,
     JwksKeyCache,
     SessionStatusCache,
@@ -288,6 +290,9 @@ async def startup_application():
                     audience=STREAM_CAMERA_INGEST_TOKEN_AUDIENCE,
                     key_cache=key_cache,
                     status_cache=status_cache,
+                    credential_status_cache=CameraCredentialStatusCache(
+                        STREAM_CAMERA_CREDENTIAL_STATUS_URL_TEMPLATE
+                    ),
                 )
                 if STREAM_CAMERA_INGEST_AUTH_ENABLED
                 else None

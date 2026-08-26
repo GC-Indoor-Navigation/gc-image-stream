@@ -311,6 +311,64 @@ class SessionStatusCache:
         return response.json()
 
 
+class CameraCredentialStatusCache:
+    """Fail-closed CAMERA_INGEST revocation cache, independent of job lifecycle."""
+
+    def __init__(
+        self,
+        url_template: str,
+        *,
+        cache_ttl_sec: float = 1.0,
+        timeout_sec: float = 1.0,
+        fetcher: Callable[[str], Mapping] | None = None,
+        monotonic: Callable[[], float] = time.monotonic,
+    ):
+        if "{credential_id}" not in url_template:
+            raise ValueError("credential status URL must contain {credential_id}")
+        if cache_ttl_sec <= 0 or timeout_sec <= 0:
+            raise ValueError("credential status cache and timeout must be positive")
+        self.url_template = url_template
+        self.cache_ttl_sec = cache_ttl_sec
+        self.timeout_sec = timeout_sec
+        self.fetcher = fetcher or self._fetch
+        self.monotonic = monotonic
+        self._active_until: dict[tuple[str, str], float] = {}
+        self._lock = RLock()
+
+    def assert_active(self, credential_id: str, processing_job_id: str) -> None:
+        key = (credential_id, processing_job_id)
+        with self._lock:
+            now = self.monotonic()
+            if self._active_until.get(key, float("-inf")) > now:
+                return
+            self._active_until.pop(key, None)
+            try:
+                payload = self.fetcher(credential_id)
+            except Exception as exc:
+                raise SessionTokenError("could not verify Main camera credential status") from exc
+            if (
+                not isinstance(payload, Mapping)
+                or payload.get("credentialId") != credential_id
+                or payload.get("processingJobId") != processing_job_id
+                or payload.get("credentialKind") != "CAMERA_INGEST"
+                or payload.get("known") is not True
+                or payload.get("active") is not True
+            ):
+                raise SessionTokenError("Main camera credential is inactive or unknown")
+            # Bound retained positive results even across long-lived multi-session use.
+            if len(self._active_until) >= 1024:
+                self._active_until.pop(next(iter(self._active_until)))
+            self._active_until[key] = now + self.cache_ttl_sec
+
+    def _fetch(self, credential_id: str) -> Mapping:
+        response = httpx.get(
+            self.url_template.format(credential_id=credential_id),
+            timeout=self.timeout_sec,
+        )
+        response.raise_for_status()
+        return response.json()
+
+
 class JwksKeyCache:
     def __init__(
         self,
@@ -445,6 +503,7 @@ class CameraIngestCredentialVerifier:
         key_cache: JwksKeyCache,
         leeway_sec: int = 5,
         status_cache: SessionStatusCache | None = None,
+        credential_status_cache: CameraCredentialStatusCache | None = None,
         now: Callable[[], float] = time.time,
     ):
         if not issuer or not audience:
@@ -456,6 +515,7 @@ class CameraIngestCredentialVerifier:
         self.key_cache = key_cache
         self.leeway_sec = leeway_sec
         self.status_cache = status_cache
+        self.credential_status_cache = credential_status_cache
         self.now = now
 
     def verify(self, token: str) -> AuthorizedCameraIngestScope:
@@ -492,6 +552,8 @@ class CameraIngestCredentialVerifier:
             raise SessionTokenError("camera ingest credential is expired")
         if self.status_cache is not None:
             self.status_cache.assert_active(scope.processing_job_id)
+        if self.credential_status_cache is not None:
+            self.credential_status_cache.assert_active(scope.token_jti, scope.processing_job_id)
 
 
 class VersionedIngestCredentialVerifier:
