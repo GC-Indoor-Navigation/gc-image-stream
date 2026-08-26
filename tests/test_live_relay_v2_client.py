@@ -17,7 +17,7 @@ from app.models import (
     FrameSetMember,
 )
 from app.services.identity import canonical_json, sha256_bytes
-from app.services.relay_v2 import LatestLiveStore, NegotiatedSession, ProtocolConfig
+from app.services.relay_v2 import CreditIdentity, LatestLiveStore, NegotiatedSession, ProtocolConfig
 from app.services.session_identity import (
     ActiveSessionCredentialStore,
     AuthorizedSessionScope,
@@ -240,6 +240,57 @@ def test_inactive_job_retires_manifest_without_reconnect_backoff(
         projection = db.get(FrameSetDeliveryProjection, "set-1")
         assert projection.live_state == "SESSION_INACTIVE"
         assert projection.last_reason == "RELAY_CREDENTIAL_SESSION_INACTIVE"
+
+
+@pytest.mark.parametrize("detail,in_flight", [
+    ("SESSION_TOKEN_SCOPE_INVALID", False),
+    ("SESSION_TOKEN_SCOPE_INVALID", True),
+    ("UNSUPPORTED_CONTRACT", False),
+])
+def test_session_rejection_retires_only_unsent_candidate(
+    session_factory, tmp_path, monkeypatch, detail, in_flight,
+):
+    _persist_candidate(session_factory, tmp_path, authorized=True)
+    provider = _RelayCredentialProvider(_relay_scope())
+    closed = []
+
+    class Channel:
+        def close(self):
+            closed.append(True)
+
+    client = ProcessingLiveRelayV2Client(
+        channel_factory=lambda _: Channel(), utc_now_ms=lambda: 10_100,
+    )
+    client.configure(
+        target="processing:50053", enabled=True, session_factory=session_factory,
+        protocol_config=ProtocolConfig(
+            producer_session_id="producer-1", processing_profile_digest=None,
+            producer_freshness_budget_ms=500,
+        ),
+        relay_credential_provider=provider,
+    )
+    monkeypatch.setattr(client, "build_stub", lambda _: lambda *args, **kwargs: iter([
+        relay_pb2.ProcessorEnvelope(hello_rejected=relay_pb2.HelloRejected(
+            reason=relay_pb2.IDENTITY_CONFLICT, detail_code=detail, retryable=False,
+        )),
+    ]))
+    if in_flight:
+        client._store.claim_latest(
+            CreditIdentity("processor", "epoch", "credit"), offered_at_ms=10_100,
+        )
+    if detail == "SESSION_TOKEN_SCOPE_INVALID" and not in_flight:
+        assert client._run_connection() is None
+        assert client._run_connection() is None  # Retired candidate is not retried.
+        with session_factory() as db:
+            projection = db.get(FrameSetDeliveryProjection, "set-1")
+            assert projection.live_state == "REJECTED"
+            assert projection.last_reason == detail
+    else:
+        with pytest.raises(PermanentRelayError):
+            client._run_connection()
+        if in_flight:
+            assert client._store.current_in_flight() is not None
+    assert closed
 
 
 def test_credit_sends_exactly_one_latest_payload(

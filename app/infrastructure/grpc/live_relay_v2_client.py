@@ -275,6 +275,21 @@ class ProcessingLiveRelayV2Client:
                 body = envelope.WhichOneof("body")
                 if session is None:
                     if body == "hello_rejected" and not envelope.hello_rejected.retryable:
+                        if (
+                            credential is not None
+                            and envelope.hello_rejected.detail_code == "SESSION_TOKEN_SCOPE_INVALID"
+                            and store.current_in_flight() is None
+                            and store.retire_eligible(
+                                hello_snapshot.key,
+                                state="REJECTED",
+                                reason="SESSION_TOKEN_SCOPE_INVALID",
+                                updated_at_ms=self._utc_now_ms(),
+                            )
+                        ):
+                            # A stopped session must not permanently disable the
+                            # shared worker. Never discard unresolved sent work.
+                            self.last_error = "relay candidate rejected: SESSION_TOKEN_SCOPE_INVALID"
+                            return None
                         raise PermanentRelayError(
                             f"relay v2 disabled: {envelope.hello_rejected.detail_code}"
                         )
