@@ -466,14 +466,6 @@ class GrpcIngestService:
                         message="device_timestamp_ms must be greater than 0",
                     )
 
-                if internal_device_id not in stream_device_ids:
-                    stream_device_ids.add(internal_device_id)
-                    self._mark_device_active(internal_device_id)
-                self._record_device_timestamp(
-                    internal_device_id,
-                    metadata.device_timestamp_ms,
-                )
-
                 content_type = resolve_content_type(metadata.format or "jpeg")
                 camera_id = metadata.camera_id or "unknown"
                 if authorization_scope is not None and (
@@ -489,6 +481,13 @@ class GrpcIngestService:
                         "PERMISSION_DENIED",
                         "frame scope does not match Main session credentials",
                     )
+                if internal_device_id not in stream_device_ids:
+                    stream_device_ids.add(internal_device_id)
+                    self._mark_device_active(internal_device_id)
+                self._record_device_timestamp(
+                    internal_device_id,
+                    metadata.device_timestamp_ms,
+                )
                 filename = f"{internal_device_id}_{camera_id}_{metadata.frame_sequence}.jpg"
                 session_id = metadata.session_id if metadata.HasField("session_id") else None
                 metadata_payload = MessageToDict(

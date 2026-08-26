@@ -861,6 +861,49 @@ def test_authenticated_ingest_rejects_scope_substitution_before_storage(
 
     assert raised.value.code.name == "PERMISSION_DENIED"
     assert captured_calls == []
+    assert service.status()["observed_device_ids"] == []
+    assert service.status()["latest_device_timestamp_ms"] == {}
+    assert service.status()["stream_closed_at_ms"] == {}
+
+
+@pytest.mark.parametrize("field", [
+    "camera_id", "device_id", "tenant_id", "site_id", "capture_session_id",
+    "processing_job_id", "profile_digest", "missing_scope",
+])
+def test_scope_rejection_does_not_poison_existing_gate(session_factory, field):
+    scope = _authorized_camera_scope()
+    service = GrpcIngestService(
+        db_factory=session_factory,
+        ingest_func=lambda *args, **kwargs: pytest.fail("rejected packet reached storage"),
+        camera_credential_store=ActiveCameraIngestCredentialStore(now=lambda: 1_000),
+    )
+    service.configure(
+        bind="127.0.0.1:0", expected_device_ids=["android-1", "android-2"],
+        session_token_verifier=_FakeVerifier(scope),
+    )
+    service._mark_device_active("android-1")
+    service._record_device_timestamp("android-1", 1_000)
+    before = service.status()
+    packet = _scoped_packet(scope.camera_id, scope)
+    packet.metadata.device_timestamp_ms = 999_999_999
+    if field == "missing_scope":
+        packet.ClearField("session_scope")
+    elif field in {"camera_id", "device_id"}:
+        setattr(packet.metadata, field, "android-2")
+    else:
+        setattr(packet.session_scope, field, "substituted")
+
+    with pytest.raises(_Aborted) as raised:
+        service._stream_frames(iter([packet]), _FakeContext("Bearer signed-token"))
+
+    assert raised.value.code.name == "PERMISSION_DENIED"
+    after = service.status()
+    for key in (
+        "observed_device_ids", "active_device_ids", "stream_closed_at_ms",
+        "latest_device_timestamp_ms", "gate_start_timestamp_ms", "gate_open",
+        "collection_started", "collection_stopped",
+    ):
+        assert after[key] == before[key]
 
 
 def test_authenticated_ingest_rejects_missing_credentials_before_iteration(
