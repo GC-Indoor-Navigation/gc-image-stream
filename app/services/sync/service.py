@@ -1,4 +1,5 @@
 from threading import RLock
+from dataclasses import replace
 
 from app.services.sync.frame_buffer import SyncFrameBufferManager, build_buffer_key
 from app.services.sync.matcher import SyncMatcher
@@ -130,10 +131,32 @@ class StreamSyncService:
                 archive_state=archive_state,
                 archive_error=archive_error,
             )
-            if stored is None or self.matcher is None:
+            if self.matcher is None:
                 return frame_set
+            if stored is None:
+                # Payload index retention is bounded. Recent frame-sets can still
+                # receive a late archive completion without retaining every frame.
+                candidates = self.matcher.recent_frame_sets()
+                if frame_set is not None:
+                    candidates.append(frame_set)
+                member = next((
+                    member for candidate in candidates
+                    for member in candidate.frames.values()
+                    if member.buffer_key == build_buffer_key(frame)
+                ), None)
+                if member is None:
+                    return frame_set
+                stored = replace(
+                    member, frame_id=frame_id, file_path=file_path,
+                    archive_state=archive_state, archive_error=archive_error,
+                )
             updated = self.matcher.replace_recent_frame_member(stored)
-            return updated if updated is not None else frame_set
+            if updated is not None:
+                return updated
+            return (
+                self.matcher.replace_frame_member(frame_set, stored)
+                if frame_set is not None else None
+            )
 
     def clear(self):
         self.configure(

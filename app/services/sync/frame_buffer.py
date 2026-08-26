@@ -3,7 +3,7 @@ from dataclasses import replace
 from threading import Lock
 
 from app.services.sync.models import StoredSyncFrame, SyncInputFrame
-from app.services.identity import sha256_bytes
+from app.services.identity import IDENTITY_MODE_V2, sha256_bytes
 
 
 class CameraSyncBuffer:
@@ -14,8 +14,29 @@ class CameraSyncBuffer:
         self.last_sequence: int | None = None
         self.last_timestamp_ms: int | None = None
         self.sequence_gap_count = 0
+        self.source_identity = None
+        self.retained_keys: deque[str] = deque()
+
+    def is_out_of_order(self, frame: StoredSyncFrame) -> bool:
+        identity = (frame.source_session_id, frame.camera_stream_id)
+        return (
+            frame.identity_mode == IDENTITY_MODE_V2
+            and identity == self.source_identity
+            and (
+                (frame.sequence is not None and self.last_sequence is not None
+                 and frame.sequence <= self.last_sequence)
+                or (self.last_timestamp_ms is not None
+                    and frame.timestamp_ms < self.last_timestamp_ms)
+            )
+        )
 
     def append(self, frame: StoredSyncFrame):
+        identity = (frame.source_session_id, frame.camera_stream_id)
+        if identity != self.source_identity:
+            self.frames.clear()
+            self.last_sequence = None
+            self.last_timestamp_ms = None
+            self.source_identity = identity
         if (
             self.last_sequence is not None
             and frame.sequence is not None
@@ -92,11 +113,15 @@ class CameraSyncBuffer:
 
 class SyncFrameBufferManager:
     def __init__(self, buffer_size: int = 120):
+        if buffer_size < 1:
+            raise ValueError("buffer_size must be positive")
         self.buffer_size = buffer_size
         self._buffers: dict[str, CameraSyncBuffer] = {}
         self._frames_by_key: dict[str, StoredSyncFrame] = {}
         self._received_count = 0
         self._duplicate_frame_count = 0
+        self._out_of_order_frame_count = 0
+        self._evicted_frame_count = 0
         self._lock = Lock()
 
     def add_frame(self, frame: SyncInputFrame) -> StoredSyncFrame | None:
@@ -140,8 +165,16 @@ class SyncFrameBufferManager:
                 stored.device_id,
                 CameraSyncBuffer(max_frames=self.buffer_size),
             )
+            if buffer.is_out_of_order(stored):
+                self._out_of_order_frame_count += 1
+                return None
+            if len(buffer.frames) == self.buffer_size:
+                self._evicted_frame_count += 1
             buffer.append(stored)
             self._frames_by_key[stored.buffer_key] = stored
+            buffer.retained_keys.append(stored.buffer_key)
+            while len(buffer.retained_keys) > self.buffer_size:
+                self._frames_by_key.pop(buffer.retained_keys.popleft(), None)
             self._received_count += 1
             return stored
 
@@ -207,6 +240,9 @@ class SyncFrameBufferManager:
                 "camera_count": len(self._buffers),
                 "received_count": self._received_count,
                 "duplicate_frame_count": self._duplicate_frame_count,
+                "out_of_order_frame_count": self._out_of_order_frame_count,
+                "evicted_frame_count": self._evicted_frame_count,
+                "retained_frame_count": len(self._frames_by_key),
                 "buffer_size": self.buffer_size,
                 "cameras": [
                     self._buffers[device_id].status(device_id)
@@ -220,6 +256,23 @@ class SyncFrameBufferManager:
             self._frames_by_key.clear()
             self._received_count = 0
             self._duplicate_frame_count = 0
+            self._out_of_order_frame_count = 0
+            self._evicted_frame_count = 0
+
+    def consume_through(self, selected: dict[str, StoredSyncFrame]) -> int:
+        """Do not let older candidates overtake an emitted live frame-set."""
+        superseded = 0
+        with self._lock:
+            for device_id, chosen in selected.items():
+                buffer = self._buffers[device_id]
+                kept = deque(maxlen=buffer.max_frames)
+                for frame in buffer.frames:
+                    if frame.timestamp_ms <= chosen.timestamp_ms:
+                        superseded += frame.buffer_key != chosen.buffer_key
+                    else:
+                        kept.append(frame)
+                buffer.frames = kept
+        return superseded
 
     def finalize_archive(
         self,

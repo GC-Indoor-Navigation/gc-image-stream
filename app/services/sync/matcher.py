@@ -34,8 +34,6 @@ class SyncMatcher:
         self._authorization_key: tuple[str, ...] | None = None
         self._capture_run_id = str(uuid4())
         self._last_synchronized_at_ms = 0
-        self._emitted_keys: set[tuple[str, ...]] = set()
-        self._used_frame_keys: set[str] = set()
         self._recent_frame_sets: deque[SynchronizedFrameSet] = deque(
             maxlen=recent_limit
         )
@@ -49,6 +47,7 @@ class SyncMatcher:
         self.last_span_ms: int | None = None
         self.last_watermark_timestamp_ms: int | None = None
         self.dropped_stale_count = 0
+        self.dropped_superseded_count = 0
         self.last_missing_cameras: list[str] = []
         self.last_reason: str | None = None
         self.last_identity_mode: str | None = None
@@ -106,16 +105,7 @@ class SyncMatcher:
             self._drop_stale_frames()
             return None
 
-        key = tuple(sorted(frame.buffer_key for frame in selected.values()))
-        if key in self._emitted_keys:
-            self.duplicate_count += 1
-            self.last_anchor_timestamp_ms = trigger_frame.timestamp_ms
-            self.last_missing_cameras = []
-            self.last_reason = "duplicate frame set"
-            self._drop_stale_frames()
-            return None
-        self._emitted_keys.add(key)
-        self._used_frame_keys.update(key)
+        self.dropped_superseded_count += self.buffer_manager.consume_through(selected)
 
         if (
             capture_session_id is not None
@@ -229,6 +219,7 @@ class SyncMatcher:
             "last_span_ms": self.last_span_ms,
             "watermark_timestamp_ms": self.last_watermark_timestamp_ms,
             "dropped_stale_count": self.dropped_stale_count,
+            "dropped_superseded_count": self.dropped_superseded_count,
             "last_missing_cameras": self.last_missing_cameras,
             "last_reason": self.last_reason,
             "capture_session_id": self._capture_session_id,
@@ -348,7 +339,6 @@ class SyncMatcher:
         for device_id in self.expected_cameras:
             frames = self.buffer_manager.available_frames(
                 device_id,
-                exclude_frame_keys=self._used_frame_keys,
             )
             if not frames:
                 missing_cameras.append(device_id)
@@ -421,7 +411,6 @@ class SyncMatcher:
         dropped_count = self.buffer_manager.drop_frames_older_than(
             self.expected_cameras,
             drop_before_timestamp_ms,
-            counted_exclude_frame_keys=self._used_frame_keys,
         )
         self.dropped_stale_count += dropped_count
 

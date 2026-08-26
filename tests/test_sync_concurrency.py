@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 from app.services.identity import (
     IDENTITY_MODE_V2,
@@ -50,28 +51,24 @@ def configured_service(expected_cameras=("camera-1", "camera-2")):
 
 def test_concurrent_ingest_serializes_matcher_mutation():
     service = configured_service()
-    frames = []
-    for sequence in range(1, 51):
-        timestamp = sequence * 100
-        frames.extend(
-            [
-                make_frame(
-                    device_id="camera-1",
-                    timestamp_ms=timestamp,
-                    sequence=sequence,
-                    session_id="camera-1-session-a",
-                ),
-                make_frame(
-                    device_id="camera-2",
-                    timestamp_ms=timestamp + 5,
-                    sequence=sequence,
-                    session_id="camera-2-session-a",
-                ),
-            ]
-        )
+    tick = Barrier(2)
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        results = list(executor.map(service.handle_frame, frames))
+    def produce(number):
+        results = []
+        for sequence in range(1, 51):
+            tick.wait(timeout=5)
+            results.append(service.handle_frame(make_frame(
+                device_id=f"camera-{number}",
+                timestamp_ms=sequence * 100 + (number - 1) * 5,
+                sequence=sequence,
+                session_id=f"camera-{number}-session-a",
+            )))
+            # No camera advances the watermark before this tick is consumed.
+            tick.wait(timeout=5)
+        return results
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = [result for batch in executor.map(produce, (1, 2)) for result in batch]
 
     matched = [frame_set for frame_set in results if frame_set is not None]
     ids = sorted(frame_set.frame_set_id for frame_set in matched)
